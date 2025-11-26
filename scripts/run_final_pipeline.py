@@ -34,32 +34,34 @@ def cleanup_artifacts():
     print("Artifacts directory cleaned and recreated.")
 
 def run_training_pipeline():
+    python_exec = sys.executable
+    
     # 1. GARCH Grid Search & Diagnostics
     run_command(
-        "python scripts/garch_diagnostics.py",
+        f"{python_exec} scripts/garch_diagnostics.py",
         "GARCH Grid Search & Diagnostics"
     )
     
     # 2. Train Models
     # We need to train for each horizon? 
     # run_train.py handles multiple horizons if specified in config.
-    # Let's check train.yaml to see if it has [2, 5, 10].
+    # Let's check train.yaml to see if the horizons are set there.
     
     # Train GARCH
     run_command(
-        "python scripts/run_train.py --train_cfg configs/train.yaml --model_cfg configs/model/garch.yaml",
+        f"{python_exec} scripts/run_train.py --train_cfg configs/train.yaml --model_cfg configs/model/garch.yaml",
         "Training GARCH"
     )
     
     # Train LSTM-RV
     run_command(
-        "python scripts/run_train.py --train_cfg configs/train.yaml --model_cfg configs/model/lstm_rv.yaml",
+        f"{python_exec} scripts/run_train.py --train_cfg configs/train.yaml --model_cfg configs/model/lstm_rv.yaml",
         "Training LSTM-RV"
     )
     
     # Train LSTM-VIX
     run_command(
-        "python scripts/run_train.py --train_cfg configs/train.yaml --model_cfg configs/model/lstm_vix.yaml",
+        f"{python_exec} scripts/run_train.py --train_cfg configs/train.yaml --model_cfg configs/model/lstm_vix.yaml",
         "Training LSTM-VIX"
     )
 

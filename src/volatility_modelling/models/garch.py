@@ -18,6 +18,12 @@ class GarchModel(BaseModel):
         # If returns are raw, variance is raw. sqrt(variance) is raw vol. * sqrt(252) is annualized.
         # So it matches.
         
+        print(f"\n[GARCH] Fitting model with spec: {spec}")
+        if spec['dist'] == 'normal':
+            print("  ⚠ WARNING: Using 'normal' distribution. Diagnostics suggest 'skewt' or 't' for financial returns.")
+        if spec['vol'] == 'GARCH':
+            print("  ℹ Note: Standard GARCH used. Consider EGARCH if leverage effects are significant.")
+        
         self.model = arch_model(
             train_returns,
             mean=spec["mean"],
@@ -25,9 +31,13 @@ class GarchModel(BaseModel):
             p=spec["p"],
             q=spec["q"],
             dist=spec["dist"],
-            rescale=False # Important to keep units consistent
+            rescale=True # Allow automatic rescaling for stability
         )
         self.res = self.model.fit(disp="off", show_warning=False)
+        
+        print(f"  ✓ Fit Complete. BIC: {self.res.bic:.2f}")
+        print(f"  ✓ Parameters:\n{self.res.params}")
+        print(f"  ✓ Scale: {self.res.scale}")
         return self
 
     def predict(self, returns: pd.Series, forecast_origins: pd.DatetimeIndex, **kwargs) -> pd.Series:
@@ -44,12 +54,24 @@ class GarchModel(BaseModel):
             p=spec["p"],
             q=spec["q"],
             dist=spec["dist"],
-            rescale=False 
+            rescale=True # Must match training
         )
         
         # Forecast using the fitted parameters
         # We set start=0 to generate forecasts for the entire history
-        forecasts = full_model.forecast(self.res.params, horizon=horizon, start=0, reindex=False)
+        # EGARCH requires simulation for horizon > 1
+        method = 'analytic'
+        if spec['vol'] == 'EGARCH' and horizon > 1:
+            method = 'simulation'
+            
+        forecasts = full_model.forecast(
+            self.res.params, 
+            horizon=horizon, 
+            start=0, 
+            reindex=False,
+            method=method,
+            simulations=1000
+        )
         
         # forecasts.variance is a DataFrame with columns h.1, h.2, ... h.30
         # index is the time t (origin).
@@ -57,6 +79,12 @@ class GarchModel(BaseModel):
         # We filter for the requested origins
         valid_origins = forecasts.variance.index.intersection(forecast_origins)
         variance_paths = forecasts.variance.loc[valid_origins]
+        
+        # Adjust for scaling
+        # arch automatically scales returns by self.res.scale
+        # So variance output is scaled by self.res.scale^2
+        scale_factor = self.res.scale
+        variance_paths = variance_paths / (scale_factor ** 2)
         
         # Sum variances over horizon
         total_variance = variance_paths.sum(axis=1)

@@ -76,3 +76,13 @@ class Preprocessor:
         if target_col in self.log_cols:
             return np.exp(y_pred)
         return y_pred
+
+def compute_log_returns(prices: pd.Series) -> pd.Series:
+    """Compute logarithmic returns from a price series."""
+    return np.log(prices / prices.shift(1)).dropna()
+
+def clip_outliers(series: pd.Series, lower_quantile: float = 0.01, upper_quantile: float = 0.99) -> pd.Series:
+    """Clip series at specified quantiles."""
+    lower = series.quantile(lower_quantile)
+    upper = series.quantile(upper_quantile)
+    return series.clip(lower=lower, upper=upper)
