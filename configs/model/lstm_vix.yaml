@@ -1,0 +1,21 @@
+model_name: "lstm_vix"
+features:
+  input_cols: ["IV"]        # use VIX/IV as features
+  seq_len: 60
+  scaler: "standard"
+target:
+  column: "RV30"
+spec:
+  hidden_size: 64
+  num_layers: 2
+  dropout: 0.2
+  bidirectional: false
+  output_activation: "none"
+opt:
+  batch_size: 128
+  lr: 1.5e-3
+  weight_decay: 1.0e-5
+  epochs: 20
+  early_stop_patience: 10
+  grad_clip_norm: 1.0
+  scheduler: { name: "cosine" }

@@ -1,0 +1,72 @@
+{
+  "1. SPY Buy & Hold":{
+    "Total Return":14.4741203907,
+    "Annualized Return":0.0877124341,
+    "Annualized Vol":0.18692446,
+    "Sharpe Ratio":0.4692400024,
+    "Max Drawdown":-0.5957601758,
+    "Alpha":0.0,
+    "Beta":1.0,
+    "Correlation":1.0
+  },
+  "2. SPY SMA(50) Trend":{
+    "Total Return":3.1162408472,
+    "Annualized Return":0.0443874779,
+    "Annualized Vol":0.1082380456,
+    "Sharpe Ratio":0.4100912731,
+    "Max Drawdown":-0.4295277099,
+    "Alpha":0.015272639,
+    "Beta":0.3350025292,
+    "Correlation":0.5785411826
+  },
+  "3. SPY Trend + VIX Sizing":{
+    "Total Return":4.7765496735,
+    "Annualized Return":0.0553071072,
+    "Annualized Vol":0.137708246,
+    "Sharpe Ratio":0.4016252386,
+    "Max Drawdown":-0.5210745816,
+    "Alpha":0.0203378313,
+    "Beta":0.4233616075,
+    "Correlation":0.5746688539
+  },
+  "4. SPY Trend + Pred Sizing":{
+    "Total Return":4.5942830858,
+    "Annualized Return":0.0542690899,
+    "Annualized Vol":0.1381059257,
+    "Sharpe Ratio":0.3929526534,
+    "Max Drawdown":-0.5243003787,
+    "Alpha":0.0192529372,
+    "Beta":0.4249006527,
+    "Correlation":0.5750971559
+  },
+  "5. VRP Unconditional":{
+    "Total Return":358516.6874571375,
+    "Annualized Return":0.4807838765,
+    "Annualized Vol":0.2200212407,
+    "Sharpe Ratio":2.1851702812,
+    "Max Drawdown":-0.984129711,
+    "Alpha":0.4096110913,
+    "Beta":0.1119282483,
+    "Correlation":0.095091398
+  },
+  "6. VRP VIX-Based":{
+    "Total Return":6.5982373902,
+    "Annualized Return":0.0642234956,
+    "Annualized Vol":0.2162571578,
+    "Sharpe Ratio":0.2969774329,
+    "Max Drawdown":-0.9829874927,
+    "Alpha":0.0803377511,
+    "Beta":0.0901684667,
+    "Correlation":0.0779381923
+  },
+  "7. VRP Residual-Based":{
+    "Total Return":5262.8384475687,
+    "Annualized Return":0.3008364122,
+    "Annualized Vol":0.0728943362,
+    "Sharpe Ratio":4.1270203948,
+    "Max Drawdown":-0.3926980662,
+    "Alpha":0.2635617409,
+    "Beta":0.0224061427,
+    "Correlation":0.057456537
+  }
+}

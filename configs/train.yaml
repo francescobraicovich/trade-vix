@@ -1,0 +1,27 @@
+experiment_name: "three_baselines"
+random_seed: 123
+
+paths:
+  data_path: "data/processed/timeseries.pkl"
+  artifacts_dir: "artifacts"
+
+splits:
+  train_end: "2015-12-31"
+  valid_end: "2019-12-31"
+  test_end:  "2025-11-18"
+
+horizons: [2, 5, 10]
+
+task:
+  target_col: "RV30"
+  ret_col: "RET_SPY"
+  iv_col: "IV"
+
+opt:
+  device: "auto"   # "cpu" | "cuda" | "auto"
+  num_workers: 0
+
+preprocessing:
+  log_transform_cols: ["RV30", "IV", "RV_backward"] # Log transform volatility features
+  winsorize_cols:
+    RET_SPY: [0.005, 0.005] # Clip top/bottom 0.5% of returns to stabilize training

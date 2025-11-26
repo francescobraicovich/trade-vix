@@ -1,0 +1,1 @@
+# Diebold–Mariano test (stub)

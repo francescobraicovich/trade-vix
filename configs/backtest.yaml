@@ -1,0 +1,43 @@
+experiment_name: "strategy_backtest"
+random_seed: 123
+
+paths:
+  data_path: "data/processed/timeseries.pkl"
+  predictions_dir: "artifacts"
+  output_dir: "artifacts/strategy"
+
+splits:
+  train_end: "2015-12-31"
+  valid_end: "2019-12-31"
+  test_end:  "2025-11-18"
+
+strategy:
+  family: "deterministic" # deterministic | linreg | tree
+  rebalance_freq: "W-FRI" # Daily: 'B', Weekly: 'W-FRI'
+  vix_proxy: "VXX"        # Placeholder
+  
+  # Strategy improvement flags
+  spy_only_mode: false    # If true, never trade VIX (go to cash instead)
+  trend_filter:
+    enabled: false        # If true, require SPY > MA to be long
+    ma_window: 200        # Moving average window (days)
+    ma_type: "sma"        # 'sma' or 'ema'
+
+  params:
+    tau: 1.0              # Threshold for mispricing score
+    w_max: 1.0            # Max weight for SPY
+    gamma: 0.2            # Fixed weight for VIX proxy
+    kappa: 0.05           # Scaling factor for vol targeting (target_vol / forecast)
+                          # Or just a scalar. Prompt says "SPY weight scaled roughly ∝ 1 / V̂_Eₜ"
+    target_vol: 0.15      # Annualized target volatility for sizing
+    costs_bps: 10.0       # Transaction costs in basis points
+
+ensemble:
+  weights: [0.33, 0.33, 0.34] # Initial weights for GARCH, LSTM_RV, LSTM_VIX (sum=1)
+  optimize_on_train: true     # Whether to optimize weights on train set
+
+grid_search:
+  enabled: true
+  modes: ["long_short_strict", "long_only_filter", "long_short_aggressive"]
+  taus: [0.5, 1.0, 1.5]
+  w_maxs: [1.0, 1.2]

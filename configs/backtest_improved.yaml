@@ -1,0 +1,42 @@
+experiment_name: "strategy_backtest_improved"
+random_seed: 123
+
+paths:
+  data_path: "data/processed/timeseries.pkl"
+  predictions_dir: "artifacts"
+  output_dir: "artifacts/strategy"
+
+splits:
+  train_end: "2015-12-31"
+  valid_end: "2019-12-31"
+  test_end:  "2025-11-18"
+
+strategy:
+  family: "deterministic"
+  rebalance_freq: "W-FRI"
+  vix_proxy: "VXX"
+  
+  # Strategy improvement flags - ENABLED
+  spy_only_mode: true       # Never trade VIX (go to cash instead)
+  trend_filter:
+    enabled: true           # Require SPY > MA to be long
+    ma_window: 200          # 200-day moving average
+    ma_type: "sma"
+
+  params:
+    tau: 1.0
+    w_max: 1.0
+    gamma: 0.2
+    kappa: 0.05
+    target_vol: 0.15
+    costs_bps: 10.0
+
+ensemble:
+  weights: [0.33, 0.33, 0.34]
+  optimize_on_train: true
+
+grid_search:
+  enabled: true
+  modes: ["long_short_strict", "long_only_filter", "long_short_aggressive"]
+  taus: [0.5, 1.0, 1.5]
+  w_maxs: [1.0, 1.2]

@@ -1,0 +1,21 @@
+model_name: "lstm_rv"
+features:
+  input_cols: ["RV_backward"]      # use past RV as features (lagged in train_loop)
+  seq_len: 60
+  scaler: "standard"        # fit on train only
+target:
+  column: "RV30"            # predict forward RV30
+spec:
+  hidden_size: 64
+  num_layers: 2
+  dropout: 0.2
+  bidirectional: false
+  output_activation: "none"
+opt:
+  batch_size: 128
+  lr: 1.5e-3
+  weight_decay: 1.0e-5
+  epochs: 20
+  early_stop_patience: 10
+  grad_clip_norm: 1.0
+  scheduler: { name: "cosine" }

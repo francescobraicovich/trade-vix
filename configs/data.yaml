@@ -1,0 +1,10 @@
+data:
+  s_and_p_proxy: "SPY"          # proxy for S&P 500
+  vix_ticker: "^VIX"            # CBOE VIX index (Yahoo Finance symbol)
+  start_date: "1990-01-01"      # inclusive
+  end_date: null                # null -> use today's date
+  realized_vol_window: 30       # trading days
+  annualization_factor: 252
+  session: "America/New_York"
+  output_dir: "data"            # base folder for raw/processed
+  save_combined: true           # also save a single combined parquet with all fields

@@ -1,0 +1,26 @@
+model_name: "garch"
+
+# Model selection performed via grid search (scripts/garch_diagnostics.py)
+# EGARCH(2,1)+skewt selected because:
+#   1. Best BIC among models passing ARCH test (15407.9)
+#   2. Passes ARCH residual test (p=0.831)
+#   3. Passes Ljung-Box test (p=0.844)
+#   4. Captures leverage effect (gamma=-0.163)
+#
+# Pre-fit diagnostics (all pass):
+#   - ADF: p=0.000 (stationary)
+#   - KPSS: p=0.100 (stationary)
+#   - ARCH-LM: p=0.000 (ARCH effects present)
+#   - Jarque-Bera: kurtosis=10.02 (use heavy-tailed distribution)
+
+spec:
+  p: 2              # ARCH order (lagged squared residuals)
+  q: 1              # GARCH order (lagged variances)
+  o: 1              # Leverage order (for EGARCH asymmetry)
+  dist: "skewt"     # Skewed Student-t for fat tails + asymmetry
+  mean: "constant"  # constant|zero
+  vol: "EGARCH"     # EGARCH captures leverage effect
+  horizon_days: 30
+  annualization: 252
+fit:
+  update_scheme: "static"   # baseline: fit once on train, predict val/test

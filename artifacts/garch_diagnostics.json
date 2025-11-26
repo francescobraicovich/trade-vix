@@ -1,0 +1,38 @@
+{
+  "timestamp": "2025-11-27T03:05:30.926432",
+  "train_period": {
+    "start": "1993-03-12",
+    "end": "2015-12-31"
+  },
+  "pre_fit_diagnostics": {
+    "adf_pvalue": 2.089146792426901e-25,
+    "kpss_pvalue": 0.1,
+    "arch_lm_pvalue": 1.9275590427718033e-292,
+    "jarque_bera_pvalue": 0.0,
+    "all_pass": true
+  },
+  "best_model": {
+    "specification": "EGARCH",
+    "p": 2,
+    "q": 1,
+    "vol": "EGARCH",
+    "distribution": "skewt",
+    "BIC": 15407.949557869319
+  },
+  "post_fit_diagnostics": {
+    "arch_lm_pvalue": 0.8311514824002648,
+    "arch_pass": true,
+    "ljung_box_pass": true
+  },
+  "parameters": {
+    "mu": 0.02216397623018484,
+    "omega": 0.003571449647006422,
+    "alpha[1]": -0.049067053908125775,
+    "alpha[2]": 0.20778631988055285,
+    "gamma[1]": -0.1629137718145741,
+    "beta[1]": 0.972419264943732,
+    "eta": 8.006035733119719,
+    "lambda": -0.13469039951755538
+  },
+  "persistence": 1.049681645008872
+}
