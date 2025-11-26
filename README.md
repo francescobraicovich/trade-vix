@@ -73,10 +73,12 @@ trade-vix/
 ## Quick Start
 
 ```bash
+# 0. Install uv (if not installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # 1. Setup environment
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+uv sync
+source .venv/bin/activate
 
 # 2. Download data
 python scripts/download_data.py
