@@ -114,7 +114,7 @@ python scripts/run_final_pipeline.py
 
 - Python 3.9+
 - PyTorch, arch, pandas, numpy, yfinance
-- See `requirements.txt` for full list
+- See `pyproject.toml` for full dependencies
 
 ---
 
