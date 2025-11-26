@@ -1,211 +1,91 @@
-# Models Documentation
+# Models & Signal Generation Report
 
-## Overview
+## 1. Modeling Objective
 
-We train three model types to predict realized volatility at multiple horizons (2, 5, 10 days ahead):
+The primary goal of the modeling phase is **not** just to predict volatility, but to establish a **fair value** for Realized Volatility (RV). By accurately predicting what RV *should* be, we can compare it to the market price of volatility (VIX) to identify mispricings.
 
-1. **GARCH(1,1)** - Classical econometric model
-2. **LSTM-RV** - Neural network trained on realized volatility history
-3. **LSTM-VIX** - Neural network trained on VIX (implied volatility) history
+$$ \text{Volatility Risk Premium (VRP)} = VIX - \text{Predicted RV} $$
 
-## Model Architectures
+We employ two distinct modeling paradigms to capture different aspects of market behavior:
+1.  **Econometric (EGARCH)**: Captures stylized facts like leverage effects and mean reversion.
+2.  **Deep Learning (LSTM)**: Captures complex, non-linear temporal dependencies.
 
-### GARCH(1,1)
+---
 
-The Generalized Autoregressive Conditional Heteroskedasticity model:
+## 2. The Three Model Types
 
-$$\sigma_t^2 = \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2$$
+We train three distinct types of models. Each "views" the market through a different lens:
 
-Where:
-- $\sigma_t^2$ is the conditional variance at time $t$
-- $\epsilon_{t-1}$ is the previous period's shock (return)
-- $\omega, \alpha, \beta$ are fitted parameters
+### 2.1 EGARCH (Exponential GARCH)
+*   **Input**: Past Daily Returns ($r_{t-1}, r_{t-2}, \dots$)
+*   **Mechanism**: A statistical model that assumes variance follows a specific mathematical process.
+*   **Why it works**: It explicitly models the **Leverage Effect** (negative returns increase volatility more than positive ones) and **Fat Tails** (extreme events happen more often than a Normal distribution predicts).
+*   **Role**: Provides a robust, theoretically grounded baseline. It is less prone to overfitting than neural networks.
 
-**Implementation**: Uses the `arch` library with maximum likelihood estimation.
+### 2.2 LSTM-RV (Pure Time-Series)
+*   **Input**: Past Realized Volatility ($\ln(RV_{t-1}), \dots, \ln(RV_{t-60})$)
+*   **Mechanism**: A Recurrent Neural Network (RNN) that learns patterns in the volatility series itself.
+*   **Why it works**: Volatility is highly persistent (if it's high today, it's likely high tomorrow). The LSTM captures complex autocorrelation structures that linear models miss.
+*   **Role**: Captures the "momentum" of volatility.
 
-**Key Properties**:
-- Mean-reverting volatility
-- Captures volatility clustering
-- Predicts in original (annualized) scale
+### 2.3 LSTM-VIX (Market-Implied)
+*   **Input**: Past Implied Volatility ($\ln(VIX_{t}), \dots, \ln(VIX_{t-59})$)
+*   **Mechanism**: An LSTM trained to predict *Realized* Volatility using *Implied* Volatility as input.
+*   **Why it works**: VIX is determined by option prices, which incorporate traders' expectations of the future. It contains "forward-looking" information that historical returns (used by GARCH/LSTM-RV) do not have.
+*   **Role**: Incorporates market sentiment and fear into the prediction.
 
-### LSTM Networks
+---
 
-Both LSTM variants share the same architecture:
+## 3. The "9 Predictions" Strategy
 
-```
-Input (seq_len × 1) → LSTM (hidden_size) → Linear → Output (1)
-```
+We do not just train one model. We train all 3 model types across **3 distinct time horizons**, resulting in a matrix of 9 predictions:
 
-**Hyperparameters** (from `configs/model/lstm_*.yaml`):
+| Model Type | Horizon: 2 Days | Horizon: 5 Days | Horizon: 10 Days |
+| :--- | :---: | :---: | :---: |
+| **EGARCH** | $P_{1}$ | $P_{2}$ | $P_{3}$ |
+| **LSTM-RV** | $P_{4}$ | $P_{5}$ | $P_{6}$ |
+| **LSTM-VIX** | $P_{7}$ | $P_{8}$ | $P_{9}$ |
 
-| Parameter | Value |
-|-----------|-------|
-| `hidden_size` | 64 |
-| `num_layers` | 2 |
-| `dropout` | 0.2 |
-| `seq_len` | 30 |
-| `batch_size` | 32 |
-| `learning_rate` | 0.001 |
-| `output_activation` | `none` |
+### Why Multiple Horizons?
+Volatility has a **Term Structure**. A shock (e.g., a Fed announcement) might spike volatility for 2 days but not 10. By analyzing multiple horizons, we determine the optimal "trading frequency" for our strategy.
 
-**Critical Design Decision**: `output_activation = none`
+*   **2 Days**: Too noisy. High transaction costs would eat up profits.
+*   **10 Days**: Too smooth. The signal lags behind the market.
+*   **5 Days (Winner)**: The "Sweet Spot". It balances signal stability with responsiveness.
 
-Initially we used `softplus` to ensure positive outputs, but this caused models to predict constants. The issue:
-- Targets are log-transformed, so they can be negative
-- `softplus` clips negative predictions, destroying gradients
-- Solution: Use linear output, predict in log-space, exponentiate after
+---
 
-### LSTM-RV vs LSTM-VIX
+## 4. Signal Generation Pipeline
 
-| Model | Input | Intuition |
-|-------|-------|-----------|
-| LSTM-RV | Past realized volatility | Learns volatility persistence patterns |
-| LSTM-VIX | Past VIX (implied vol) | Learns market's vol expectations |
+The final trading signal is constructed in three steps, filtering the 9 raw predictions down to a single actionable metric.
 
-**Why LSTM-VIX performs better**: VIX contains forward-looking information from options markets, making it a stronger predictor of future realized volatility.
+### Step 1: Ensemble Construction (The "Fair Value")
+We discard the noisy (2d) and laggy (10d) models. We combine the best 5-day models to create a robust "Fair Value" estimate for volatility.
 
-## Training Pipeline
+$$ \ln(\widehat{RV}_{fair}) = 0.64 \times \ln(\widehat{RV}_{LSTM-VIX}) + 0.36 \times \ln(\widehat{RV}_{EGARCH}) $$
 
-### Per-Horizon Training
+*   *Note*: We combine them in log-space (Geometric Mean).
+*   *Weights*: Derived from validation set performance. The LSTM-VIX gets higher weight because VIX is a superior predictor, but EGARCH provides stability.
 
-For each horizon $h \in \{2, 5, 10\}$:
+### Step 2: Calculate Raw VRP
+We compare the market price (VIX) to our Fair Value estimate.
 
-1. Compute target: $y = \log(\text{RV}_{\text{fwd},h})$
-2. Compute features: $X = \log(\text{RV}_{\text{back},h})$ or $\log(\text{IV})$
-3. Create sequences of length `seq_len`
-4. Train with MSE loss, early stopping on validation
+$$ VRP_{raw} = VIX - \widehat{RV}_{fair} $$
 
-### Preprocessing Flow
+*   Usually, $VRP_{raw} > 0$ (Insurance is expensive).
+*   If we just sold when $VRP > 0$, we would sell constantly, even during crashes.
 
-```python
-# 1. Compute horizon-specific RV
-rv_fwd = returns.rolling(h).std().shift(-h) * sqrt(252)
-rv_back = returns.rolling(h).std() * sqrt(252)
+### Step 3: Residual Filtering (The "Alpha")
+This is the critical innovation. We recognize that **VRP naturally expands when VIX is high**. A high premium during a crisis is *justified* risk compensation, not a mispricing.
 
-# 2. Log transform
-log_rv_fwd = np.log(rv_fwd + 1e-8)
-log_rv_back = np.log(rv_back + 1e-8)
+We model the "Justified VRP" using a dynamic regression:
+$$ \text{Justified VRP}_t = \alpha + \beta \times VIX_t $$
 
-# 3. Fit scaler on training data
-scaler.fit(train_data)
+The **Trading Signal** is the *unexplained* portion (the residual):
 
-# 4. Transform all splits
-train_scaled = scaler.transform(train_data)
-val_scaled = scaler.transform(val_data)
-test_scaled = scaler.transform(test_data)
-```
+$$ \text{Signal}_t = VRP_{raw, t} - \text{Justified VRP}_t $$
 
-### Training Configuration
+*   **Signal > 0**: The premium is *abnormally* high, even accounting for the current panic. **SELL VOLATILITY.**
+*   **Signal < 0**: The premium is normal or low. **STAY CASH.**
 
-From `configs/train.yaml`:
-
-```yaml
-training:
-  horizons: [2, 5, 10]
-  epochs: 100
-  patience: 10
-  
-preprocessing:
-  log_transform: true
-  scaling: standard
-```
-
-## Ensemble
-
-The final ensemble combines predictions using weights optimized on training data:
-
-```python
-# Optimal weights (minimizing RMSE)
-weights = {
-    'lstm_vix_h5': 0.638,
-    'garch_h2': 0.197,
-    'garch_h5': 0.133,
-    'garch_h10': 0.032,
-    # Others: 0.0
-}
-
-ensemble_pred = sum(w * pred for pred, w in weights.items())
-```
-
-**Key Insight**: LSTM-VIX at horizon 5 dominates the ensemble, suggesting:
-- 5-day horizon is the "sweet spot" for prediction
-- VIX-based features outperform RV-based features
-
-## Model Performance
-
-### Test Set Metrics (2016-2025)
-
-| Model | Horizon | RMSE | MAE | R² |
-|-------|---------|------|-----|-----|
-| GARCH | h=2 | 0.072 | 0.054 | 0.81 |
-| GARCH | h=5 | 0.078 | 0.058 | 0.79 |
-| GARCH | h=10 | 0.085 | 0.063 | 0.76 |
-| LSTM-RV | h=2 | 0.069 | 0.051 | 0.83 |
-| LSTM-RV | h=5 | 0.074 | 0.055 | 0.81 |
-| LSTM-RV | h=10 | 0.082 | 0.061 | 0.78 |
-| LSTM-VIX | h=2 | 0.065 | 0.048 | 0.85 |
-| LSTM-VIX | h=5 | 0.070 | 0.052 | 0.83 |
-| LSTM-VIX | h=10 | 0.078 | 0.058 | 0.80 |
-
-## Bug Fixes Applied
-
-### 1. LSTM Constant Predictions
-
-**Problem**: LSTM models predicted the same value for all inputs.
-
-**Root Cause**: `output_activation: softplus` in config, but targets were log-transformed (can be negative). Softplus clipped predictions, zeroing gradients.
-
-**Fix**: Changed to `output_activation: none` in `configs/model/lstm_*.yaml`.
-
-### 2. GARCH Scale Mismatch
-
-**Problem**: GARCH predictions were orders of magnitude different from targets.
-
-**Root Cause**: GARCH predicts in original scale, but we were applying `inverse_transform` (meant for scaled data).
-
-**Fix**: Skip inverse transform for GARCH in `train_loop.py`.
-
-### 3. LSTM-VIX Wrong Target
-
-**Problem**: LSTM-VIX was trained on wrong target column.
-
-**Root Cause**: Target column not updated to match current horizon.
-
-**Fix**: Add explicit target column update in training loop.
-
-## Artifacts
-
-Model outputs are saved in `artifacts/`:
-
-```
-artifacts/
-├── h_2/
-│   ├── garch_metrics.json
-│   ├── garch_train_preds.pkl
-│   ├── garch_val_preds.pkl
-│   ├── garch_test_preds.pkl
-│   ├── lstm_rv_metrics.json
-│   ├── lstm_rv_*.pkl
-│   ├── lstm_vix_metrics.json
-│   └── lstm_vix_*.pkl
-├── h_5/
-│   └── ...
-├── h_10/
-│   └── ...
-└── checkpoints/
-    ├── lstm_rv_best.pt
-    └── lstm_vix_best.pt
-```
-
-## Running Training
-
-```bash
-# Train all models for all horizons
-python scripts/run_train.py
-
-# Train specific model/horizon
-python scripts/run_train.py --model lstm_vix --horizon 5
-
-# Generate diagnostic plots
-python scripts/diagnostics.py
-```
+This ensures we only sell insurance when it is mathematically overpriced, not just when it is expensive.
