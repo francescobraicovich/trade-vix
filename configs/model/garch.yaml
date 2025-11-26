@@ -13,14 +13,14 @@ model_name: "garch"
 #   - ARCH-LM: p=0.000 (ARCH effects present)
 #   - Jarque-Bera: kurtosis=10.02 (use heavy-tailed distribution)
 
+model_name: "garch"
 spec:
-  p: 2              # ARCH order (lagged squared residuals)
-  q: 1              # GARCH order (lagged variances)
-  o: 1              # Leverage order (for EGARCH asymmetry)
-  dist: "skewt"     # Skewed Student-t for fat tails + asymmetry
-  mean: "constant"  # constant|zero
-  vol: "EGARCH"     # EGARCH captures leverage effect
-  horizon_days: 30
+  mean: "Constant"      # Changed from Zero based on diagnostics
+  vol: "EGARCH"         # Changed from GARCH based on diagnostics (leverage effect)
+  p: 2                  # Changed from 1
+  q: 1
+  dist: "skewt"         # Changed from normal (fat tails & skewness)
+  horizon_days: 30      # forecast horizon
   annualization: 252
 fit:
-  update_scheme: "static"   # baseline: fit once on train, predict val/test
+  update_scheme: "static" # static = fit once on train, rolling = refit every N days

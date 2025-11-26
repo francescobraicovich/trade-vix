@@ -172,10 +172,13 @@ def run_strategies_and_backtest():
     
     # Build ensemble prediction (same weights as in analysis)
     if 'lstm_vix_h5' in preds.columns and 'garch_h5' in preds.columns:
-        # Log-space predictions, need to exponentiate
-        pred_rv = np.exp(preds['lstm_vix_h5'] * 0.64 + preds['garch_h5'] * 0.36)
+        # Predictions are in raw scale (annualized vol).
+        # We combine them in log-space (geometric mean) as per original analysis weights.
+        log_lstm = np.log(preds['lstm_vix_h5'])
+        log_garch = np.log(preds['garch_h5'])
+        pred_rv = np.exp(log_lstm * 0.64 + log_garch * 0.36)
     elif 'garch_h5' in preds.columns:
-        pred_rv = np.exp(preds['garch_h5'])
+        pred_rv = preds['garch_h5']
     else:
         pred_rv = None
     

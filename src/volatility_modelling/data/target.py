@@ -15,11 +15,13 @@ def realized_volatility_forward_window(
 
     """
     r = returns.sort_index()
-    # forward window using shift(-1)
-    fwd = r.shift(-1).rolling(window=window, min_periods=window)
-    mu = fwd.mean()
-    var = (fwd.apply(lambda x: ((x - x.mean()) ** 2).sum(), raw=False) / float(window))
-    rv = np.sqrt(var) * np.sqrt(ann_factor)
+    # Calculate rolling std (backward looking by default)
+    # At index t+window, it uses returns from t+1 to t+window
+    rolling_std = r.rolling(window=window, min_periods=window).std()
+    
+    # Shift backward by window so that at index t we have the volatility of t+1...t+window
+    rv = rolling_std.shift(-window) * np.sqrt(ann_factor)
+    
     rv.name = f"RV{window}"
     return rv
 
