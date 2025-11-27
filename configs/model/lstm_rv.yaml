@@ -6,16 +6,16 @@ features:
 target:
   column: "RV30"            # predict forward RV30
 spec:
-  hidden_size: 64
+  hidden_size: 128
   num_layers: 2
-  dropout: 0.2
-  bidirectional: false
+  dropout: 0.3
+  bidirectional: true
   output_activation: "none"
 opt:
   batch_size: 128
-  lr: 1.5e-3
-  weight_decay: 1.0e-5
-  epochs: 20
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  epochs: 30
   early_stop_patience: 10
   grad_clip_norm: 1.0
   scheduler: { name: "cosine" }
