@@ -42,32 +42,25 @@ def run_training(train_cfg_path, model_cfg_path):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         
-    # Load data
+    # Load data (already contains RV_fwd_{h} and RV_back_{h} for all horizons)
     data_path = train_cfg["paths"]["data_path"]
     df = pd.read_pickle(data_path)
     df = df.sort_index()
 
-    # Prepare multiple horizons: compute forward and backward realized vol for each horizon
-    horizons = train_cfg.get("horizons", [30])
-    annualization = train_cfg.get("opt", {}).get("annualization", 252)
+    # Get horizons from config
+    horizons = train_cfg.get("horizons", [2, 5, 10, 30])
     ret_col = train_cfg["task"]["ret_col"]
-    max_horizon = max(horizons)
 
+    # Verify required columns exist
     for h in horizons:
-        # Forward realized vol: uses future returns (t+1 .. t+h)
-        # We use sample std (with mean subtraction, n-1 denominator) for consistency with target.py
-        # Shift returns by -1 so rolling window captures t+1 to t+h
-        future_returns = df[ret_col].shift(-1)
-        rolling_std_fwd = future_returns.rolling(window=h, min_periods=h).std()
-        # Shift back by h-1 so that at index t, we have std of returns t+1 to t+h
-        df[f"RV_fwd_{h}"] = rolling_std_fwd.shift(-(h - 1)) * np.sqrt(annualization)
-
-        # Backward realized vol: past h returns up to t (t-h+1 .. t)
-        # Using sample std for consistency
-        df[f"RV_back_{h}"] = df[ret_col].rolling(window=h, min_periods=h).std() * np.sqrt(annualization)
-
-    # Drop rows with NaNs introduced by forward/backward calculations
-    df = df.dropna()
+        target_col = f"RV_fwd_{h}"
+        back_col = f"RV_back_{h}"
+        if target_col not in df.columns:
+            raise ValueError(f"Missing target column {target_col}. Run download_data.py first.")
+        if back_col not in df.columns:
+            raise ValueError(f"Missing feature column {back_col}. Run download_data.py first.")
+    
+    print(f"Data loaded: {len(df)} rows, columns: {list(df.columns)}")
     
     # Run training for each horizon separately and save artifacts per-horizon
     base_artifacts = Path(train_cfg["paths"]["artifacts_dir"])

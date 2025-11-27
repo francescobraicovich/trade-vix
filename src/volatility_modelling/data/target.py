@@ -3,16 +3,25 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 
+# NOTE: This module is DEPRECATED. Use features.py instead.
+# The functions here are kept for backward compatibility only.
+# The preferred functions are:
+#   - features.compute_forward_realized_volatility()
+#   - features.compute_backward_realized_volatility()
+
 def realized_volatility_forward_window(
     returns: pd.Series, window: int = 30, ann_factor: int = 252
 ) -> pd.Series:
-    """Compute *forward* realized volatility over the next `window` trading days.
+    """DEPRECATED: Use features.compute_forward_realized_volatility() instead.
+    
+    Compute *forward* realized volatility over the next `window` trading days.
 
-
-    At each date t, RV_{t+window} = sqrt(ann_factor) * sqrt( (1/window) * sum_{i=1..window} (r_{t+i} - mean_{t+1..t+window})^2 ).
+    At each date t, RV_{t+window} = sqrt(ann_factor) * std(r_{t+1}, ..., r_{t+window}).
 
     The result is indexed by the forecast origin date t.
-
+    
+    WARNING: This implementation uses a different shift pattern than features.py.
+    Both produce the same result, but features.py is clearer and preferred.
     """
     r = returns.sort_index()
     # Calculate rolling std (backward looking by default)
