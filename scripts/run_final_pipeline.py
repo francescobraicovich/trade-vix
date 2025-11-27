@@ -226,6 +226,38 @@ def calculate_metrics(returns, benchmark=None):
             metrics["Beta"] = slope
             metrics["Correlation"] = r_value
             
+            # Market Regime Performance
+            # Define bear market as periods when benchmark has negative returns
+            # Use rolling 21-day (1 month) cumulative return to identify regime
+            benchmark_cum = (1 + X).rolling(21, min_periods=1).apply(lambda x: x.prod() - 1, raw=True)
+            bear_mask = benchmark_cum < 0
+            bull_mask = ~bear_mask
+            
+            # Calculate performance in each regime
+            if bear_mask.sum() > 0:
+                bear_returns = y[bear_mask]
+                bear_total = (1 + bear_returns).prod() - 1
+                bear_ann = (1 + bear_returns).prod() ** (ann_factor / len(bear_returns)) - 1 if len(bear_returns) > 0 else 0
+                metrics["Bear Market Return"] = bear_total
+                metrics["Bear Market Ann Return"] = bear_ann
+                metrics["Bear Market Days"] = int(bear_mask.sum())
+            else:
+                metrics["Bear Market Return"] = 0
+                metrics["Bear Market Ann Return"] = 0
+                metrics["Bear Market Days"] = 0
+                
+            if bull_mask.sum() > 0:
+                bull_returns = y[bull_mask]
+                bull_total = (1 + bull_returns).prod() - 1
+                bull_ann = (1 + bull_returns).prod() ** (ann_factor / len(bull_returns)) - 1 if len(bull_returns) > 0 else 0
+                metrics["Bull Market Return"] = bull_total
+                metrics["Bull Market Ann Return"] = bull_ann
+                metrics["Bull Market Days"] = int(bull_mask.sum())
+            else:
+                metrics["Bull Market Return"] = 0
+                metrics["Bull Market Ann Return"] = 0
+                metrics["Bull Market Days"] = 0
+            
     return metrics
 
 def run_strategies_and_backtest():
@@ -343,7 +375,78 @@ def run_strategies_and_backtest():
     vix_position = 1.0 + 0.5 * (1.0 - vix_rank)
     
     # ========================================================================
-    # LOOP OVER HORIZONS
+    # COMPUTE VRP BASELINE STRATEGIES (INDEPENDENT OF PREDICTION HORIZON)
+    # ========================================================================
+    
+    # VRP strategies 5 & 6 use 30-day variance swap (matching VIX horizon)
+    # These are the SAME for all prediction horizons
+    
+    vrp_horizon = 30  # Match VIX's 30-day horizon
+    rv_fwd_30 = df_test['RV_fwd_30'] if 'RV_fwd_30' in df_test.columns else None
+    
+    vrp_baseline_strategies = {}
+    
+    if rv_fwd_30 is not None:
+        print(f"\n{'='*80}")
+        print(f"COMPUTING VRP BASELINE STRATEGIES (30-day variance swap)")
+        print(f"{'='*80}")
+        
+        # Variance swap P&L: IV^2 - RV^2 (both annualized)
+        var_swap_pnl = (vix**2 - rv_fwd_30**2).dropna()
+        
+        # Convert to non-overlapping 30-day periods
+        non_overlap_pnl = var_swap_pnl.iloc[::vrp_horizon]
+        
+        # Scale to target 10% annual volatility using expanding window to avoid lookahead bias
+        target_annual_vol = 0.10
+        periods_per_year = 252 / vrp_horizon
+        target_period_std = target_annual_vol / np.sqrt(periods_per_year)
+        
+        # Compute expanding window std (shifted by 1 to avoid using current period)
+        expanding_std = non_overlap_pnl.expanding(min_periods=12).std().shift(1)  # 12 periods = ~1 year
+        expanding_std = expanding_std.fillna(non_overlap_pnl.iloc[:12].std())  # Use initial std for first 12 periods
+        
+        # Scale factor based on expanding std
+        scale_series = target_period_std / expanding_std
+        scale_series = scale_series.fillna(1.0)
+        scaled_pnl = non_overlap_pnl * scale_series
+        
+        print(f"Variance swap P&L statistics (before scaling):")
+        print(f"  Mean: {non_overlap_pnl.mean():.6f}")
+        print(f"  Std: {non_overlap_pnl.std():.6f}")
+        print(f"  Scale factor (first): {scale_series.iloc[0]:.4f}")
+        print(f"  Scale factor (last): {scale_series.iloc[-1]:.4f}")
+        print(f"  Scale factor (mean): {scale_series.mean():.4f}")
+        
+        # Upsample back to daily (forward fill within each 30-day period)
+        daily_pnl_vrp = scaled_pnl.reindex(df_test.index, method='ffill').fillna(0)
+        
+        # 5. Unconditional (Always Sell) - SAME FOR ALL HORIZONS
+        vrp_baseline_strategies['5. VRP Unconditional'] = daily_pnl_vrp
+        
+        # 6. VIX-Based Filtering (sell when VIX > 70th percentile) - SAME FOR ALL HORIZONS
+        # Use expanding window to avoid lookahead bias
+        vix_expanding_70th = vix.expanding(min_periods=252).quantile(0.70).shift(1)
+        
+        print(f"VIX threshold (expanding):")
+        print(f"  First value: {vix_expanding_70th.dropna().iloc[0]:.4f}")
+        print(f"  Last value: {vix_expanding_70th.iloc[-1]:.4f}")
+        print(f"  Mean: {vix_expanding_70th.mean():.4f}")
+        
+        # Apply to periodic samples
+        vix_periodic = vix.iloc[::vrp_horizon].reindex(scaled_pnl.index)
+        vix_threshold_periodic = vix_expanding_70th.iloc[::vrp_horizon].reindex(scaled_pnl.index)
+        vix_high_periodic = (vix_periodic > vix_threshold_periodic)
+        
+        vix_filtered_pnl_periodic = scaled_pnl.copy()
+        vix_filtered_pnl_periodic[~vix_high_periodic] = 0
+        
+        # Convert to daily
+        daily_pnl_vix_filter = vix_filtered_pnl_periodic.reindex(df_test.index, method='ffill').fillna(0)
+        vrp_baseline_strategies['6. VRP VIX-Based'] = daily_pnl_vix_filter
+    
+    # ========================================================================
+    # LOOP OVER HORIZONS FOR PREDICTION-BASED STRATEGIES
     # ========================================================================
     
     for h in horizons:
@@ -378,7 +481,7 @@ def run_strategies_and_backtest():
         # EQUITY STRATEGIES (Long SPY)
         # ====================================================================
         
-        # 1. Buy & Hold SPY (same for all horizons)
+        # 1. Buy & Hold SPY (same for all horizons, but report separately for clarity)
         strategies[f'1. SPY Buy & Hold (h={h})'] = spy_ret
         
         # 2. SMA(50) Trend Only (same for all horizons)
@@ -387,56 +490,27 @@ def run_strategies_and_backtest():
         # 3. Trend + VIX Sizing (same for all horizons)
         strategies[f'3. SPY Trend + VIX Sizing (h={h})'] = trend_signal * vix_position * spy_ret
         
-        # 4. Trend + Prediction Sizing (horizon-specific)
+        # 4. Trend + Prediction Sizing (horizon-specific - uses prediction)
         if pred_rv is not None:
             pred_rank = pred_rv.rolling(252, min_periods=50).rank(pct=True).shift(1).fillna(0.5)
             pred_position = 1.0 + 0.5 * (1.0 - pred_rank)
             strategies[f'4. SPY Trend + Pred Sizing (h={h})'] = trend_signal * pred_position * spy_ret
         
         # ====================================================================
-        # VRP STRATEGIES (Variance Swap - Sell Volatility)
+        # ADD VRP BASELINE STRATEGIES (Same for all horizons)
         # ====================================================================
         
-        if pred_rv is not None:
-            # Use actual forward RV from the data for variance swap P&L
-            rv_fwd_col = f"RV_fwd_{h}"
-            if rv_fwd_col in df_test.columns:
-                rv_fwd = df_test[rv_fwd_col]
-            else:
-                # Fallback: compute from returns
-                rv_fwd = spy_ret.rolling(h).std().shift(-h) * np.sqrt(252)
-            
-            # Variance swap P&L: IV^2 - RV^2
-            var_swap_pnl = (vix**2 - rv_fwd**2).dropna()
-            
-            # Convert to non-overlapping (every h days)
-            non_overlap_pnl = var_swap_pnl.iloc[::h]
-            
-            # Scale to target 10% annual volatility for fair comparison
-            raw_std = non_overlap_pnl.std()
-            target_annual_vol = 0.10
-            periods_per_year = 252 / h
-            target_period_std = target_annual_vol / np.sqrt(periods_per_year)
-            scale = target_period_std / raw_std if raw_std > 0 else 1.0
-            scaled_pnl = non_overlap_pnl * scale
-            
-            # Upsample back to daily (forward fill within each period)
-            daily_pnl = scaled_pnl.reindex(df_test.index, method='ffill').fillna(0)
-            
-            # 5. Unconditional (Always Sell)
-            strategies[f'5. VRP Unconditional (h={h})'] = daily_pnl
-            
-            # 6. VIX-Based Filtering (sell when VIX > 70th percentile)
-            vix_threshold = vix.quantile(0.70)
-            vix_periodic = vix.iloc[::h].reindex(scaled_pnl.index)
-            vix_high_periodic = (vix_periodic > vix_threshold)
-            vix_filtered_pnl_periodic = scaled_pnl.copy()
-            vix_filtered_pnl_periodic[~vix_high_periodic] = 0
-            # Convert to daily
-            daily_pnl_vix = vix_filtered_pnl_periodic.reindex(df_test.index, method='ffill').fillna(0)
-            strategies[f'6. VRP VIX-Based (h={h})'] = daily_pnl_vix
-            
+        # Add the baseline VRP strategies (computed once, same for all horizons)
+        for name, returns in vrp_baseline_strategies.items():
+            strategies[f'{name} (h={h})'] = returns
+        
+        # ====================================================================
+        # VRP RESIDUAL-BASED STRATEGY (Horizon-specific - uses predictions)
+        # ====================================================================
+        
+        if pred_rv is not None and rv_fwd_30 is not None:
             # 7. Residual-Based (Our Unique Alpha)
+            # This strategy uses the prediction to identify mispricing
             # VRP forecast = VIX - Pred_RV
             vrp_forecast = vix - pred_rv
             
@@ -484,6 +558,18 @@ def run_strategies_and_backtest():
                 
                 # Signal: residual > threshold
                 resid_high = (residual_series > resid_threshold).fillna(False)
+                
+                # Use the SAME 30-day variance swap P&L as baseline strategies
+                # but filter it using our residual signal
+                var_swap_pnl = (vix**2 - rv_fwd_30**2).dropna()
+                non_overlap_pnl = var_swap_pnl.iloc[::vrp_horizon]
+                
+                # Apply same expanding window scaling as baseline strategies
+                expanding_std = non_overlap_pnl.expanding(min_periods=12).std().shift(1)
+                expanding_std = expanding_std.fillna(non_overlap_pnl.iloc[:12].std())
+                scale_series = target_period_std / expanding_std
+                scale_series = scale_series.fillna(1.0)
+                scaled_pnl = non_overlap_pnl * scale_series
                 
                 # Align signal with periodic P&L
                 resid_high_periodic = pd.Series(index=scaled_pnl.index, dtype=bool)
@@ -535,12 +621,18 @@ def run_strategies_and_backtest():
     # Reorder columns
     col_order = ['Strategy', 'Horizon', 'Total Return', 'Annualized Return', 
                  'Annualized Vol', 'Sharpe Ratio', 'Max Drawdown', 
-                 'Alpha', 'Beta', 'Correlation']
+                 'Alpha', 'Beta', 'Correlation',
+                 'Bear Market Ann Return', 'Bull Market Ann Return',
+                 'Bear Market Days', 'Bull Market Days']
     col_order = [c for c in col_order if c in results_df.columns]
     results_df = results_df[col_order]
     
-    # Display summary
-    print("\n" + results_df.to_string(index=False))
+    # Display summary (main metrics only for readability)
+    display_cols = ['Strategy', 'Horizon', 'Total Return', 'Annualized Return', 
+                    'Annualized Vol', 'Sharpe Ratio', 'Max Drawdown', 
+                    'Alpha', 'Beta', 'Correlation']
+    display_cols = [c for c in display_cols if c in results_df.columns]
+    print("\n" + results_df[display_cols].to_string(index=False))
     
     # Save results
     results_df.to_csv("artifacts/strategy/final_metrics_all_horizons.csv", index=False)
@@ -560,6 +652,24 @@ def run_strategies_and_backtest():
         h_results = results_df[results_df['Horizon'] == h].sort_values('Sharpe Ratio', ascending=False)
         print(f"\nHorizon {h} days:")
         print(h_results[['Strategy', 'Sharpe Ratio', 'Annualized Return', 'Max Drawdown']].head(3).to_string(index=False))
+    
+    # Verify that baseline strategies are identical across horizons
+    print("\n" + "="*80)
+    print("VERIFICATION: Baseline Strategies (Should be identical across horizons)")
+    print("="*80)
+    baseline_strats = ['1. SPY Buy & Hold', '2. SPY SMA(50) Trend', '3. SPY Trend + VIX Sizing',
+                       '5. VRP Unconditional', '6. VRP VIX-Based']
+    for strat_base in baseline_strats:
+        strat_results = results_df[results_df['Strategy'].str.startswith(strat_base)]
+        if len(strat_results) > 0:
+            print(f"\n{strat_base}:")
+            print(strat_results[['Horizon', 'Sharpe Ratio', 'Annualized Return']].to_string(index=False))
+            # Check if metrics are identical (allowing small numerical differences)
+            sharpes = strat_results['Sharpe Ratio'].values
+            if len(sharpes) > 1 and np.allclose(sharpes, sharpes[0], rtol=1e-5):
+                print("  ✓ Verified: Metrics are identical across horizons")
+            elif len(sharpes) > 1:
+                print(f"  ⚠ Warning: Metrics differ across horizons (expected for this strategy)")
     
     # ========================================================================
     # PLOTS
@@ -651,6 +761,58 @@ def run_strategies_and_backtest():
     plt.savefig("artifacts/plots/sharpe_ratio_comparison.png", dpi=150)
     print("✓ Saved artifacts/plots/sharpe_ratio_comparison.png")
     plt.close()
+    
+    # ========================================================================
+    # MARKET REGIME PERFORMANCE ANALYSIS
+    # ========================================================================
+    
+    print("\n" + "="*80)
+    print("MARKET REGIME PERFORMANCE (Bear vs Bull Markets)")
+    print("="*80)
+    
+    # Filter for one horizon to avoid duplication (baseline strategies are same across horizons)
+    regime_df = results_df[results_df['Horizon'] == 30].copy()
+    
+    if 'Bear Market Ann Return' in regime_df.columns:
+        print("\nBear Market Performance (21-day rolling benchmark return < 0):")
+        regime_cols = ['Strategy', 'Bear Market Ann Return', 'Bear Market Days']
+        regime_display = regime_df[regime_cols].copy()
+        regime_display['Bear Market Ann Return'] = regime_display['Bear Market Ann Return'].apply(lambda x: f"{x:.2%}")
+        regime_display = regime_display.sort_values('Bear Market Days', ascending=False)
+        print(regime_display.to_string(index=False))
+        
+        print("\nBull Market Performance (21-day rolling benchmark return >= 0):")
+        regime_cols = ['Strategy', 'Bull Market Ann Return', 'Bull Market Days']
+        regime_display = regime_df[regime_cols].copy()
+        regime_display['Bull Market Ann Return'] = regime_display['Bull Market Ann Return'].apply(lambda x: f"{x:.2%}")
+        regime_display = regime_display.sort_values('Bull Market Days', ascending=False)
+        print(regime_display.to_string(index=False))
+        
+        # Create bar chart comparing bear vs bull performance
+        fig, ax = plt.subplots(figsize=(14, 8))
+        
+        strategies = regime_df['Strategy'].str.replace(' \\(h=30\\)', '', regex=True).values
+        bear_returns = regime_df['Bear Market Ann Return'].values * 100
+        bull_returns = regime_df['Bull Market Ann Return'].values * 100
+        
+        x = np.arange(len(strategies))
+        width = 0.35
+        
+        bars1 = ax.bar(x - width/2, bear_returns, width, label='Bear Market', color='red', alpha=0.7)
+        bars2 = ax.bar(x + width/2, bull_returns, width, label='Bull Market', color='green', alpha=0.7)
+        
+        ax.set_ylabel('Annualized Return (%)', fontsize=12)
+        ax.set_title('Strategy Performance: Bear vs Bull Markets (h=30)', fontsize=14, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(strategies, rotation=45, ha='right', fontsize=9)
+        ax.legend(fontsize=11)
+        ax.grid(axis='y', alpha=0.3)
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8)
+        
+        plt.tight_layout()
+        plt.savefig("artifacts/plots/bear_bull_comparison.png", dpi=150)
+        print("\n✓ Saved artifacts/plots/bear_bull_comparison.png")
+        plt.close()
     
     print("\n" + "="*80)
     print("BACKTESTING COMPLETE")
