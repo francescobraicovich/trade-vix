@@ -7,37 +7,72 @@ from .registry import register
 @register("garch")
 class GarchModel(BaseModel):
     def fit(self, train_returns: pd.Series, **kwargs):
-        spec = self.cfg["spec"]
-        # arch_model expects returns in percentage or similar scale often, but log returns are fine.
-        # Usually better to scale up by 100 for numerical stability if they are raw log returns.
-        # But prompt says "RET_SPY (daily log returns)". I will use as is or scale if needed.
-        # Standard practice with arch is often returns * 100. 
-        # However, the target RV30 is annualized. 
-        # If I use raw log returns, variance is in raw units.
-        # rv30_hat = sqrt((252/30) * sum(variance))
-        # If returns are raw, variance is raw. sqrt(variance) is raw vol. * sqrt(252) is annualized.
-        # So it matches.
+        base_spec = self.cfg["spec"]
         
-        print(f"\n[GARCH] Fitting model with spec: {spec}")
-        if spec['dist'] == 'normal':
-            print("  ⚠ WARNING: Using 'normal' distribution. Diagnostics suggest 'skewt' or 't' for financial returns.")
-        if spec['vol'] == 'GARCH':
-            print("  ℹ Note: Standard GARCH used. Consider EGARCH if leverage effects are significant.")
+        # Define grid for search
+        # We search around sensible defaults for financial time series
+        param_grid = {
+            'p': [1, 2],
+            'q': [1, 2],
+            'vol': ['GARCH', 'EGARCH'],
+            'dist': ['t', 'skewt'], # Financial returns are rarely normal
+            'mean': ['Constant', 'Zero']
+        }
         
-        self.model = arch_model(
-            train_returns,
-            mean=spec["mean"],
-            vol=spec["vol"],
-            p=spec["p"],
-            q=spec["q"],
-            dist=spec["dist"],
-            rescale=True # Allow automatic rescaling for stability
-        )
-        self.res = self.model.fit(disp="off", show_warning=False)
+        best_bic = float('inf')
+        best_model = None
+        best_res = None
+        best_params = None
         
-        print(f"  ✓ Fit Complete. BIC: {self.res.bic:.2f}")
-        print(f"  ✓ Parameters:\n{self.res.params}")
+        print(f"\n[GARCH] Starting Grid Search...")
+        print(f"  Grid: {param_grid}")
+        
+        import itertools
+        keys, values = zip(*param_grid.items())
+        combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
+        
+        for i, params in enumerate(combinations):
+            try:
+                # Skip invalid combinations if any (e.g. GARCH usually needs p>=1, q>=1)
+                
+                model = arch_model(
+                    train_returns,
+                    mean=params["mean"],
+                    vol=params["vol"],
+                    p=params["p"],
+                    q=params["q"],
+                    dist=params["dist"],
+                    rescale=True
+                )
+                
+                # Fit model
+                res = model.fit(disp="off", show_warning=False)
+                
+                if res.bic < best_bic:
+                    best_bic = res.bic
+                    best_model = model
+                    best_res = res
+                    best_params = params
+                    # print(f"  New Best: {params} | BIC: {best_bic:.2f}")
+                    
+            except Exception as e:
+                # print(f"  Failed: {params} | Error: {e}")
+                continue
+                
+        if best_res is None:
+            raise RuntimeError("GARCH Grid Search failed to find any valid model.")
+            
+        self.model = best_model
+        self.res = best_res
+        
+        print(f"\n[GARCH] Grid Search Complete.")
+        print(f"  ✓ Best Parameters: {best_params}")
+        print(f"  ✓ Best BIC: {self.res.bic:.2f}")
         print(f"  ✓ Scale: {self.res.scale}")
+        
+        # Update config with best params so predict uses them
+        self.cfg["spec"].update(best_params)
+        
         return self
 
     def predict(self, returns: pd.Series, forecast_origins: pd.DatetimeIndex, **kwargs) -> pd.Series:

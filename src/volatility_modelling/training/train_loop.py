@@ -100,9 +100,10 @@ def run_training(train_cfg_path, model_cfg_path):
         # Find the cutoff: we need to drop the last h rows from training to avoid leakage
         # More precisely, drop rows where index > train_end - h trading days
         # Since we don't know exact trading days, we drop rows in the last h calendar days as a safe buffer
-        safe_train_end = train_end_ts - pd.Timedelta(days=int(h * 1.5))  # 1.5x to account for weekends
+        # We add a small buffer (5 days) to account for weekends/holidays
+        safe_train_end = train_end_ts - pd.Timedelta(days=int(h + 5))
         train_df = train_df.loc[train_df.index <= safe_train_end]
-        print(f"  [Leakage Prevention] Training data ends at {train_df.index.max()} (gap of ~{h} trading days before val)")
+        print(f"  [Leakage Prevention] Training data ends at {train_df.index.max()} (gap of >{h} days before val)")
 
         # Check stationarity before transform (train only)
         preprocessor.check_stationarity(train_df, f"Train (Raw) h={h}")

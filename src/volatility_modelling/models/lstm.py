@@ -31,19 +31,25 @@ class LSTMNet(nn.Module):
             input_size, hidden_size, num_layers, 
             batch_first=True, dropout=dropout, bidirectional=bidirectional
         )
+        
         lstm_out_dim = hidden_size * (2 if bidirectional else 1)
+        
         self.head = nn.Sequential(
             nn.Linear(lstm_out_dim, hidden_size),
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size, 1)
         )
         self.output_activation = output_activation
         self.softplus = nn.Softplus()
 
     def forward(self, x):
+        # x: [batch, seq_len, input_size]
         out, _ = self.lstm(x)
+        
         # Take last time step
         out = out[:, -1, :]
+        
         out = self.head(out)
         if self.output_activation == "softplus":
             out = self.softplus(out)
