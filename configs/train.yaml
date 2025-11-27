@@ -10,10 +10,10 @@ splits:
   valid_end: "2019-12-31"
   test_end:  "2025-11-18"
 
-horizons: [2, 5, 10]
+horizons: [2, 5, 10, 30]
 
 task:
-  target_col: "RV30"
+  target_col: "RV_fwd_{h}"  # Dynamically set per horizon
   ret_col: "RET_SPY"
   iv_col: "IV"
 
@@ -22,6 +22,4 @@ opt:
   num_workers: 0
 
 preprocessing:
-  log_transform_cols: ["RV30", "IV", "RV_backward"] # Log transform volatility features
-  winsorize_cols:
-    RET_SPY: [0.005, 0.005] # Clip top/bottom 0.5% of returns to stabilize training
+  log_transform_cols: []  # Dynamically populated per horizon: RV_fwd_{h}, RV_back_{h}, IV

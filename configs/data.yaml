@@ -3,7 +3,7 @@ data:
   vix_ticker: "^VIX"            # CBOE VIX index (Yahoo Finance symbol)
   start_date: "1990-01-01"      # inclusive
   end_date: null                # null -> use today's date
-  realized_vol_window: 30       # trading days
+  horizons: [2, 5, 10, 30]      # forecast horizons in trading days
   annualization_factor: 252
   session: "America/New_York"
   output_dir: "data"            # base folder for raw/processed
