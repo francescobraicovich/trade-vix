@@ -18,21 +18,32 @@ We compute daily log returns for SPY to ensure additivity and statistical tracta
 $$ r_t = \ln(P_t) - \ln(P_{t-1}) $$
 
 ### 2.2 Realized Volatility (Target)
-The target variable is the **30-day Forward Realized Volatility**. Great care was taken to ensure **no lookahead bias**.
 
-*   **Definition**: The annualized standard deviation of returns over the *next* 30 trading days.
+The target variable is the **h-day Forward Realized Volatility**, where $h \in \{2, 5, 10\}$ (configurable horizons). Great care was taken to ensure **no lookahead bias**.
+
+*   **Definition**: The annualized sample standard deviation of returns over the *next* $h$ trading days.
 *   **Formula**:
-    $$ RV_{t, 30} = \sqrt{252} \times \text{std}(r_{t+1}, r_{t+2}, \dots, r_{t+30}) $$
+    $$ RV_{t,h} = \sqrt{252} \times \text{std}(r_{t+1}, r_{t+2}, \dots, r_{t+h}) $$
+    where $\text{std}(\cdot)$ is the **sample standard deviation** (with Bessel's correction, i.e., dividing by $n-1$):
+    $$ \text{std}(r_{t+1}, \dots, r_{t+h}) = \sqrt{\frac{1}{h-1} \sum_{i=1}^{h} (r_{t+i} - \bar{r})^2}, \quad \bar{r} = \frac{1}{h}\sum_{i=1}^{h} r_{t+i} $$
 *   **Implementation**:
     ```python
-    # Calculate rolling std (backward looking by default)
-    rolling_std = r.rolling(window=30).std()
-    # Shift backward by window size to align future volatility to current time t
-    target = rolling_std.shift(-30)
+    # Shift returns by -1 so rolling window captures t+1 to t+h
+    future_returns = df[ret_col].shift(-1)
+    rolling_std_fwd = future_returns.rolling(window=h, min_periods=h).std()
+    # Shift back by h-1 so that at index t, we have std of returns t+1 to t+h
+    df[f"RV_fwd_{h}"] = rolling_std_fwd.shift(-(h - 1)) * np.sqrt(252)
     ```
-    *At time $t$, the target value depends strictly on returns from $t+1$ to $t+30$.*
+    *At time $t$, the target value depends strictly on returns from $t+1$ to $t+h$.*
 
-### 2.3 Implied Volatility (Feature)
+### 2.3 Backward Realized Volatility (Feature)
+
+For LSTM models, we also compute **backward-looking realized volatility** as a feature:
+$$ RV^{back}_{t,h} = \sqrt{252} \times \text{std}(r_{t-h+1}, r_{t-h+2}, \dots, r_{t}) $$
+
+This uses **only past data** and serves as a baseline feature for predicting future volatility.
+
+### 2.4 Implied Volatility (Feature)
 The VIX index is quoted in annualized percentage points (e.g., 20.0). We convert this to a decimal format for consistency with RV:
 $$ IV_t = \frac{VIX_t}{100} $$
 
@@ -50,7 +61,7 @@ Stationarity is a prerequisite for GARCH models and helps LSTM convergence.
 | Series | p-value | Result | Conclusion |
 |--------|---------|--------|------------|
 | **Log Returns** | $0.0000$ | Reject $H_0$ | **Stationary** (Fit for GARCH) |
-| **Realized Vol (RV30)** | $0.0000$ | Reject $H_0$ | **Stationary** (Fit for LSTM) |
+| **Realized Vol (RV)** | $0.0000$ | Reject $H_0$ | **Stationary** (Fit for LSTM) |
 | **Implied Vol (IV)** | $0.0000$ | Reject $H_0$ | **Stationary** (Fit for LSTM) |
 
 ### 3.2 Volatility Clustering (ARCH-LM Test)
@@ -76,8 +87,9 @@ We tested for the "Leverage Effect" (negative returns increasing volatility more
 ## 4. Preprocessing Pipeline
 
 ### 4.1 Winsorization
-To prevent extreme outliers (e.g., 2020 COVID crash) from destabilizing the LSTM gradients, we winsorize inputs at the **1st and 99th percentiles**.
+To prevent extreme outliers (e.g., 2020 COVID crash) from destabilizing the LSTM gradients, we winsorize inputs at the **0.5th and 99.5th percentiles**.
 *   *Note: We do NOT winsorize the target variable, as predicting extreme events is the goal.*
+*   Winsorization bounds are computed **only on training data** to prevent data leakage.
 
 ### 4.2 Log Transformation
 Volatility is strictly positive and log-normally distributed. For the LSTM, we log-transform both inputs and targets:
@@ -94,22 +106,43 @@ To respect the time-series nature of the data, we use strict temporal splitting 
 | **Validation** | 2016-01-01 to 2019-12-31 | Hyperparameter tuning & Early Stopping |
 | **Test** | 2020-01-01 to Present | Final Out-of-Sample Performance |
 
+### 4.4 Target Leakage Prevention
+
+Since the forward target $RV_{t,h}$ uses returns from $t+1$ to $t+h$, training samples near the end of the training period would have targets that use returns from the validation period. To prevent this **target leakage**, we introduce a gap:
+
+*   Training samples are excluded if their target horizon extends into the validation period.
+*   Specifically, training data ends approximately $h \times 1.5$ calendar days before the validation start date (to account for weekends/holidays).
+
+This ensures that **no future information leaks into the training process**.
+
 ---
 
 ## 5. Artifacts
 
-The analysis generated the following visual proofs in `artifacts/plots/data_analysis/`:
+The analysis generates the following visual proofs in `artifacts/plots/data_analysis/`:
 1.  `01_market_overview.png`: History of SPY and VIX.
 2.  `02_volatility_clustering.png`: Visual evidence of ARCH effects.
 3.  `03_distribution_fat_tails.png`: Empirical distribution vs. Normal vs. Student-t.
 4.  `04_autocorrelation_check.png`: ACF plots confirming mean independence but variance dependence.
 5.  `05_leverage_effect.png`: Correlation bar chart showing the leverage effect.
-  log_transform: true
-  winsorize: true
-  winsorize_limits: [0.01, 0.99]
+
+---
+
+## 6. Configuration
+
+Key data settings in `configs/train.yaml`:
+```yaml
+horizons: [2, 5, 10]  # Forecast horizons in trading days
+
+preprocessing:
+  log_transform_cols: ["RV_fwd_{h}", "RV_back_{h}", "IV"]
+  winsorize_cols:
+    RET_SPY: [0.005, 0.005]  # Clip top/bottom 0.5%
 ```
 
-## Usage
+---
+
+## 7. Usage
 
 ```python
 import pandas as pd
@@ -119,6 +152,9 @@ df = pd.read_pickle('data/processed/timeseries.pkl')
 
 # Access key columns
 spy_returns = df['RET_SPY']
-realized_vol = df['RV30']
 implied_vol = df['IV']
+
+# Note: Forward RV targets (RV_fwd_2, RV_fwd_5, RV_fwd_10) and
+# backward RV features (RV_back_2, RV_back_5, RV_back_10) are
+# computed dynamically during training for each horizon.
 ```

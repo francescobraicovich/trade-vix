@@ -51,17 +51,20 @@ def run_training(train_cfg_path, model_cfg_path):
     horizons = train_cfg.get("horizons", [30])
     annualization = train_cfg.get("opt", {}).get("annualization", 252)
     ret_col = train_cfg["task"]["ret_col"]
+    max_horizon = max(horizons)
 
     for h in horizons:
         # Forward realized vol: uses future returns (t+1 .. t+h)
-        fwd_sq = 0
-        for i in range(1, h + 1):
-            fwd_sq = fwd_sq + df[ret_col].shift(-i).pow(2)
-        df[f"RV_fwd_{h}"] = np.sqrt((annualization / h) * fwd_sq)
+        # We use sample std (with mean subtraction, n-1 denominator) for consistency with target.py
+        # Shift returns by -1 so rolling window captures t+1 to t+h
+        future_returns = df[ret_col].shift(-1)
+        rolling_std_fwd = future_returns.rolling(window=h, min_periods=h).std()
+        # Shift back by h-1 so that at index t, we have std of returns t+1 to t+h
+        df[f"RV_fwd_{h}"] = rolling_std_fwd.shift(-(h - 1)) * np.sqrt(annualization)
 
         # Backward realized vol: past h returns up to t (t-h+1 .. t)
-        back_sq = df[ret_col].pow(2).rolling(window=h).sum()
-        df[f"RV_back_{h}"] = np.sqrt((annualization / h) * back_sq)
+        # Using sample std for consistency
+        df[f"RV_back_{h}"] = df[ret_col].rolling(window=h, min_periods=h).std() * np.sqrt(annualization)
 
     # Drop rows with NaNs introduced by forward/backward calculations
     df = df.dropna()
@@ -95,6 +98,18 @@ def run_training(train_cfg_path, model_cfg_path):
 
         # Split data for this horizon
         train_df, val_df, test_df = split_by_date(df, splits)
+        
+        # Remove target leakage: drop training samples whose target horizon extends into validation
+        # The target RV_fwd_{h} at time t uses returns t+1 to t+h, so we need a gap of h trading days
+        train_end_ts = pd.to_datetime(splits_cfg["train_end"])
+        if train_df.index.tz is not None:
+            train_end_ts = train_end_ts.tz_localize(train_df.index.tz)
+        # Find the cutoff: we need to drop the last h rows from training to avoid leakage
+        # More precisely, drop rows where index > train_end - h trading days
+        # Since we don't know exact trading days, we drop rows in the last h calendar days as a safe buffer
+        safe_train_end = train_end_ts - pd.Timedelta(days=int(h * 1.5))  # 1.5x to account for weekends
+        train_df = train_df.loc[train_df.index <= safe_train_end]
+        print(f"  [Leakage Prevention] Training data ends at {train_df.index.max()} (gap of ~{h} trading days before val)")
 
         # Check stationarity before transform (train only)
         preprocessor.check_stationarity(train_df, f"Train (Raw) h={h}")
