@@ -169,6 +169,97 @@ def plot_leverage_effect(returns):
     plt.savefig(f"{OUTPUT_DIR}/05_leverage_effect.png")
     plt.close()
 
+def plot_rv_vs_vix(df):
+    print("Generating RV vs VIX plot...")
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
+    
+    # Convert to percentage
+    rv_30 = df['RV_fwd_30'] * 100
+    iv = df['IV'] * 100
+    
+    # Top panel: Levels
+    ax1.plot(rv_30.index, rv_30, label='Realized Volatility (30d)', linewidth=0.8, alpha=0.8, color='#1f77b4')
+    ax1.plot(iv.index, iv, label='Implied Volatility (VIX)', linewidth=0.8, alpha=0.8, color='#d62728')
+    ax1.set_title('Realized Volatility vs. Implied Volatility (VIX)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Volatility (%)')
+    ax1.legend(loc='upper left')
+    ax1.grid(True, alpha=0.3)
+    
+    # Bottom panel: Spread (Volatility Risk Premium)
+    vrp = iv - rv_30
+    ax2.plot(vrp.index, vrp, color='black', linewidth=0.6, alpha=0.7)
+    ax2.axhline(0, color='red', linestyle='--', linewidth=0.8)
+    ax2.fill_between(vrp.index, vrp, 0, where=(vrp>=0), color='green', alpha=0.3, label='Positive Premium')
+    ax2.fill_between(vrp.index, vrp, 0, where=(vrp<0), color='red', alpha=0.3, label='Negative Premium')
+    ax2.set_title('Volatility Risk Premium (VIX - RV)', fontsize=10, fontweight='bold')
+    ax2.set_ylabel('Spread (pts)')
+    ax2.set_xlabel('Date')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(loc='upper left')
+    
+    plt.tight_layout()
+    plt.savefig(f"{OUTPUT_DIR}/06_rv_vs_vix.png")
+    plt.close()
+
+def plot_rv_horizons(df):
+    print("Generating RV Horizons plot...")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Compare short vs long term
+    # Use a subset or rolling mean if too noisy, but raw is honest
+    ax.plot(df.index, df['RV_fwd_5'] * 100, label='RV (5-day)', linewidth=0.5, alpha=0.5, color='#1f77b4')
+    ax.plot(df.index, df['RV_fwd_30'] * 100, label='RV (30-day)', linewidth=1.2, alpha=0.9, color='#ff7f0e')
+    
+    ax.set_title('Realized Volatility Term Structure (Short vs Long Term)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Volatility (%)')
+    ax.set_xlabel('Date')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(f"{OUTPUT_DIR}/07_rv_horizons.png")
+    plt.close()
+
+def plot_correlation_matrix(df):
+    print("Generating Correlation Matrix...")
+    # Select relevant columns
+    cols = ['RET_SPY', 'IV', 'RV_fwd_5', 'RV_fwd_10', 'RV_fwd_30']
+    # Rename for display
+    display_names = ['Returns', 'VIX (IV)', 'RV (5d)', 'RV (10d)', 'RV (30d)']
+    
+    # Drop NaNs for correlation calculation
+    corr_df = df[cols].dropna().corr()
+    
+    fig, ax = plt.subplots(figsize=(8, 7))
+    sns.heatmap(corr_df, annot=True, cmap='coolwarm', vmin=-1, vmax=1, center=0,
+                xticklabels=display_names, yticklabels=display_names, 
+                square=True, linewidths=.5, cbar_kws={"shrink": .5}, ax=ax)
+    
+    ax.set_title('Feature Correlation Matrix', fontsize=12, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(f"{OUTPUT_DIR}/08_correlation_matrix.png")
+    plt.close()
+
+def plot_qq(returns):
+    print("Generating QQ plot...")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    stats.probplot(returns, dist="norm", plot=ax)
+    
+    ax.set_title('Q-Q Plot: Returns vs. Normal Distribution', fontsize=12, fontweight='bold')
+    ax.get_lines()[0].set_markerfacecolor('#1f77b4')
+    ax.get_lines()[0].set_markeredgecolor('#1f77b4')
+    ax.get_lines()[0].set_alpha(0.5)
+    ax.get_lines()[0].set_markersize(2)
+    ax.get_lines()[1].set_color('#d62728') # Regression line
+    ax.get_lines()[1].set_linewidth(2)
+    
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(f"{OUTPUT_DIR}/09_qq_plot.png")
+    plt.close()
+
 def main():
     df, spy_px, vix_px = load_data()
     returns = df['RET_SPY'].dropna()
@@ -178,6 +269,10 @@ def main():
     plot_distribution_analysis(returns)
     plot_autocorrelation(returns)
     plot_leverage_effect(returns)
+    plot_rv_vs_vix(df)
+    plot_rv_horizons(df)
+    plot_correlation_matrix(df)
+    plot_qq(returns)
     
     print(f"\nAll plots saved to {OUTPUT_DIR}")
 

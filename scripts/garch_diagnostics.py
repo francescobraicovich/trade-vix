@@ -27,6 +27,9 @@ import yaml
 import json
 from datetime import datetime
 import warnings
+import matplotlib.pyplot as plt
+# import seaborn as sns
+
 warnings.filterwarnings('ignore')
 
 # Statistical tests
@@ -37,6 +40,88 @@ from scipy import stats
 # GARCH models
 from arch import arch_model
 from itertools import product
+
+# Set style for plots
+plt.style.use('seaborn-v0_8-paper')
+# sns.set_palette("deep")
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['savefig.bbox'] = 'tight'
+plt.rcParams['font.family'] = 'serif'
+
+def plot_news_impact_curve(garch_res, egarch_res, output_path):
+    """
+    Generates and saves the News Impact Curve (NIC) comparison.
+    The NIC shows how volatility at t+1 responds to a shock (return) at t.
+    """
+    print(f"Generating News Impact Curve comparison...")
+    
+    # Range of shocks (z = epsilon / sigma)
+    z_range = np.linspace(-3, 3, 100)
+    
+    # 1. Calculate GARCH NIC
+    # sigma_t^2 = omega + alpha * epsilon_{t-1}^2 + beta * sigma_{t-1}^2
+    # We fix sigma_{t-1}^2 at the unconditional variance
+    garch_params = garch_res.params
+    garch_unc_var = garch_res.conditional_volatility.var() # Approximation
+    
+    # Extract coeffs (handling different p, q orders - taking lag 1 impact)
+    omega_g = garch_params['omega']
+    alpha_g = garch_params.get('alpha[1]', 0)
+    beta_g = garch_params.get('beta[1]', 0)
+    
+    # NIC: response of sigma_t^2 to epsilon_{t-1} (where epsilon = z * sigma)
+    # We plot relative to average volatility
+    avg_sigma = np.sqrt(garch_unc_var)
+    epsilon_range = z_range * avg_sigma
+    
+    # GARCH is symmetric: depends on epsilon^2
+    garch_nic = omega_g + alpha_g * (epsilon_range**2) + beta_g * garch_unc_var
+    
+    # 2. Calculate EGARCH NIC
+    # ln(sigma_t^2) = omega + alpha(|z| - E|z|) + gamma*z + beta*ln(sigma_{t-1}^2)
+    egarch_params = egarch_res.params
+    
+    omega_e = egarch_params['omega']
+    alpha_e = egarch_params.get('alpha[1]', 0)
+    gamma_e = egarch_params.get('gamma[1]', 0)
+    beta_e = egarch_params.get('beta[1]', 0)
+    
+    # E[|z|] for standard normal is sqrt(2/pi) approx 0.7979
+    # For t-dist it's slightly different, but we use approx for visualization
+    E_abs_z = np.sqrt(2/np.pi)
+    
+    # Calculate log variance response
+    # We assume past log variance is at unconditional mean
+    # Unconditional log variance approx: omega / (1 - beta)
+    unc_log_var = omega_e / (1 - beta_e)
+    
+    log_var_response = omega_e + alpha_e * (np.abs(z_range) - E_abs_z) + gamma_e * z_range + beta_e * unc_log_var
+    egarch_nic = np.exp(log_var_response)
+    
+    # Plotting
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    ax.plot(z_range, garch_nic, label='GARCH (Symmetric)', color='#1f77b4', linewidth=2, linestyle='--')
+    ax.plot(z_range, egarch_nic, label='EGARCH (Asymmetric)', color='#d62728', linewidth=2)
+    
+    ax.set_title('News Impact Curve: GARCH vs. EGARCH', fontsize=12, fontweight='bold')
+    ax.set_xlabel('Standardized Shock ($z_{t-1}$)', fontsize=10)
+    ax.set_ylabel('Conditional Variance ($\sigma_t^2$)', fontsize=10)
+    
+    # Add annotation for leverage effect
+    ax.annotate('Leverage Effect:\nNegative shocks increase\nvolatility more', 
+                xy=(-2, egarch_nic[16]), xytext=(-2.5, egarch_nic[16]*1.2),
+                arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=8),
+                fontsize=9, bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8))
+    
+    ax.legend(loc='upper center')
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path)
+    plt.close()
+    print(f"Saved plot to {output_path}")
 
 
 def run_pre_fit_diagnostics(returns: pd.Series, verbose: bool = True) -> dict:
@@ -151,12 +236,11 @@ def run_grid_search(train_returns: pd.Series, val_returns: pd.Series = None,
     # Grid parameters
     vol_models = [
         ('GARCH', {'vol': 'Garch', 'o': 0}),
-        ('GJR-GARCH', {'vol': 'Garch', 'o': 1}),
         ('EGARCH', {'vol': 'EGARCH', 'o': 1}),
     ]
     distributions = ['normal', 't', 'skewt']
     p_values = [1, 2]
-    q_values = [1]
+    q_values = [1, 2]
     
     results = []
     
@@ -329,7 +413,32 @@ def main():
     print()
     
     # 3. Fit best model
-    best = grid_results[grid_results['ARCH_pass']].iloc[0]
+    # Find best of each type for comparison
+    df_passed = grid_results[grid_results['ARCH_pass']]
+    if df_passed.empty:
+        print("WARNING: No models passed ARCH test. Using best BIC model.")
+        df_passed = grid_results
+        
+    best_garch = df_passed[df_passed['model'] == 'GARCH'].sort_values('BIC').iloc[0]
+    best_egarch = df_passed[df_passed['model'] == 'EGARCH'].sort_values('BIC').iloc[0]
+    
+    print(f"Best GARCH: {best_garch['model']}({best_garch['p']},{best_garch['q']})+{best_garch['dist']} (BIC={best_garch['BIC']:.1f})")
+    print(f"Best EGARCH: {best_egarch['model']}({best_egarch['p']},{best_egarch['q']})+{best_egarch['dist']} (BIC={best_egarch['BIC']:.1f})")
+    print()
+    
+    # Fit both for plotting
+    garch_fit = fit_and_validate_model(
+        train_returns, 'GARCH', int(best_garch['p']), int(best_garch['q']), best_garch['dist'], verbose=False
+    )
+    egarch_fit = fit_and_validate_model(
+        train_returns, 'EGARCH', int(best_egarch['p']), int(best_egarch['q']), best_egarch['dist'], verbose=False
+    )
+    
+    # Plot comparison
+    plot_news_impact_curve(garch_fit['result'], egarch_fit['result'], Path('artifacts/plots/data_analysis/10_garch_vs_egarch_nic.png'))
+    
+    # Use best overall for final output
+    best = df_passed.sort_values('BIC').iloc[0]
     
     final = fit_and_validate_model(
         train_returns,
