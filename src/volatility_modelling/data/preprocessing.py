@@ -6,8 +6,6 @@ class Preprocessor:
     def __init__(self, cfg):
         self.cfg = cfg
         self.log_cols = cfg.get("log_transform_cols", [])
-        self.winsorize_cols = cfg.get("winsorize_cols", {}) # col: limits [low, high]
-        self.clip_bounds = {} # Stores (min, max) for each col based on train
 
     def check_stationarity(self, df, name="Dataset"):
         print(f"\n--- Stationarity Checks ({name}) ---")
@@ -24,18 +22,8 @@ class Preprocessor:
 
     def fit(self, train_df):
         """
-        Calculate clipping bounds based on training data to avoid leakage.
+        Fit preprocessing on training data (placeholder for future extensions).
         """
-        for col, limits in self.winsorize_cols.items():
-            if col in train_df.columns:
-                lower_quantile = limits[0]
-                upper_quantile = 1.0 - limits[1]
-                
-                lower_bound = train_df[col].quantile(lower_quantile)
-                upper_bound = train_df[col].quantile(upper_quantile)
-                
-                self.clip_bounds[col] = (lower_bound, upper_bound)
-                print(f"  [Preprocessing] Fit Winsorize {col}: Clip [{lower_bound:.4f}, {upper_bound:.4f}]")
         return self
 
     def transform(self, df):
@@ -43,11 +31,6 @@ class Preprocessor:
         Apply transformations.
         """
         df = df.copy()
-        
-        # Winsorize (Clip)
-        for col, bounds in self.clip_bounds.items():
-            if col in df.columns:
-                df[col] = df[col].clip(lower=bounds[0], upper=bounds[1])
                 
         # Log Transform
         for col in self.log_cols:
@@ -80,9 +63,3 @@ class Preprocessor:
 def compute_log_returns(prices: pd.Series) -> pd.Series:
     """Compute logarithmic returns from a price series."""
     return np.log(prices / prices.shift(1)).dropna()
-
-def clip_outliers(series: pd.Series, lower_quantile: float = 0.01, upper_quantile: float = 0.99) -> pd.Series:
-    """Clip series at specified quantiles."""
-    lower = series.quantile(lower_quantile)
-    upper = series.quantile(upper_quantile)
-    return series.clip(lower=lower, upper=upper)

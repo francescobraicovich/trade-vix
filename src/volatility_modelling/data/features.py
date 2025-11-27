@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from volatility_modelling.data.loaders import DownloadSpec, download_price_series, save_series
-from volatility_modelling.data.preprocessing import compute_log_returns, clip_outliers
+from volatility_modelling.data.preprocessing import compute_log_returns
 from volatility_modelling.utils.time import to_decimal_vol, ensure_tz_ny
 
 @dataclass
@@ -77,7 +77,7 @@ def build_and_save_streams(cfg: DataBuildConfig) -> Dict[str, Path]:
     save_series(spy_px.rename("PX_SPY"), raw_dir / "sp500.pkl")
     out["raw_sp500"] = raw_dir / "sp500.pkl"
 
-    spy_ret = clip_outliers(compute_log_returns(spy_px)).rename("RET_SPY")
+    spy_ret = compute_log_returns(spy_px).rename("RET_SPY")
 
     # 2) VIX levels -> implied vol (decimal)
     vix_spec = DownloadSpec(ticker=cfg.vix_ticker, start_date=cfg.start_date, end_date=cfg.end_date, price_field="Close")
