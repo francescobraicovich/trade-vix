@@ -157,36 +157,56 @@ Since:
 
 ## 4. Statistical Rigor & Diagnostics
 
-Before modeling, we performed comprehensive statistical tests to validate assumptions for GARCH and LSTM models.
+We performed rigorous statistical testing to validate model assumptions, ensuring that our choice of GARCH specification is data-driven.
 
-### 4.1 Stationarity (ADF Test)
-Stationarity is a prerequisite for GARCH models and helps LSTM convergence.
-*   **Test**: Augmented Dickey-Fuller (ADF)
-*   **Null Hypothesis ($H_0$)**: The series has a unit root (non-stationary).
+### 4.1 Stationarity (ADF & KPSS Tests)
+Stationarity is a prerequisite for GARCH modeling.
+*   **ADF Test**: $p < 0.0001$ (Reject $H_0$: Unit Root)
+*   **KPSS Test**: $p = 0.1000$ (Fail to Reject $H_0$: Stationary)
+*   **Conclusion**: Log returns are **stationary**.
+*   **Visual Proof**: The returns plot in `02_volatility_clustering.png` shows a constant mean around zero, unlike the non-stationary price series in `01_market_overview.png`.
 
-| Series | p-value | Result | Conclusion |
-|--------|---------|--------|------------|
-| **Log Returns** | $0.0000$ | Reject $H_0$ | **Stationary** (Fit for GARCH) |
-| **Realized Vol (RV)** | $0.0000$ | Reject $H_0$ | **Stationary** (Fit for LSTM) |
-| **Implied Vol (IV)** | $0.0000$ | Reject $H_0$ | **Stationary** (Fit for LSTM) |
+### 4.2 Volatility Clustering (ARCH-LM & Ljung-Box)
+We verified the presence of "ARCH effects" (volatility clustering), which justifies the use of GARCH models.
+*   **ARCH-LM Test**: $p < 0.0001$ (Statistic: 1389.1)
+*   **Ljung-Box (Squared Returns)**: $p < 0.0001$ (Statistic: 3738.1 at lag 10)
+*   **Conclusion**: Strong evidence of volatility clustering.
+*   **Visual Proof**:
+    *   `02_volatility_clustering.png`: Shows clear bursts of high volatility.
+    *   `04_autocorrelation_check.png`: Squared returns show significant, persistent autocorrelation, while raw returns do not.
 
-### 4.2 Volatility Clustering (ARCH-LM Test)
-We verified the presence of volatility clustering (periods of high variance followed by high variance), which justifies the use of GARCH models.
-*   **Test**: ARCH-LM (Lagrange Multiplier)
-*   **Result**: p-value $\approx 0.00$ (Strong rejection of "no ARCH effects").
-*   **Visual Proof**: See `artifacts/plots/data_analysis/02_volatility_clustering.png`.
-
-### 4.3 Normality & Fat Tails (Jarque-Bera Test)
-Financial returns are often assumed to be Normal, but in reality, they exhibit "fat tails" (extreme events happen more often than expected).
-*   **Test**: Jarque-Bera
-*   **Result**: p-value $\approx 0.00$ (Reject Normality).
-*   **Implication**: We cannot use a Normal distribution for the GARCH model.
-*   **Solution**: We selected a **Skewed Student's t-distribution** (`dist='skewt'`) for the GARCH model to capture these tails.
+### 4.3 Normality & Fat Tails (Jarque-Bera)
+Financial returns typically exhibit "fat tails" (leptokurtosis) and skewness.
+*   **Jarque-Bera Test**: $p < 0.0001$ (Statistic: 24056.6)
+*   **Skewness**: -0.1115 (Slightly negative, indicating crash risk)
+*   **Excess Kurtosis**: 10.02 (Heavy tails)
+*   **Conclusion**: Returns are **highly non-normal**. We must use a **Skewed Student's t-distribution** (`dist='skewt'`).
+*   **Visual Proof**:
+    *   `03_distribution_fat_tails.png`: The empirical distribution (gray) is much taller and narrower than the Normal fit (red), with fatter tails.
+    *   `09_qq_plot.png`: The S-shape deviation from the red line confirms heavy tails.
 
 ### 4.4 Leverage Effect
-We tested for the "Leverage Effect" (negative returns increasing volatility more than positive returns).
+We tested if negative returns increase volatility more than positive returns (the "Leverage Effect").
 *   **Evidence**: Strong negative correlation between $r_t$ and $\sigma^2_{t+k}$.
 *   **Model Selection**: Standard GARCH assumes symmetric response. We chose **EGARCH** (Exponential GARCH), which explicitly models this asymmetry.
+*   **Visual Proof**: `05_leverage_effect.png` shows negative correlations at all lags.
+
+### 4.5 Model Selection (Grid Search)
+We ran a comprehensive grid search over GARCH and EGARCH models with Normal, Student-t, and Skewed Student-t distributions. We tested lag orders $p \in \{1, 2\}$ and $q \in \{1, 2\}$.
+
+*   **Selection Criteria**: Lowest BIC *conditional* on passing the ARCH-LM test on residuals (ensuring no remaining heteroskedasticity).
+*   **Winner**: **EGARCH(2,1) with Skewed Student's t-distribution**.
+    *   BIC: 15401.9 (Lowest)
+    *   Residual ARCH-LM p-value: 0.8386 (Passed)
+    *   Residual Ljung-Box p-value: 0.8509 (Passed)
+*   **Comparison**: The best standard GARCH model (GARCH(2,1) + skewt) had a significantly higher BIC (15638.5), indicating a worse fit.
+
+### 4.6 GARCH vs. EGARCH: The Leverage Effect
+To understand *why* EGARCH outperforms GARCH, we generated the **News Impact Curve (NIC)** (`10_garch_vs_egarch_nic.png`).
+*   **What it shows**: How volatility at $t+1$ responds to a shock (return) at $t$.
+*   **GARCH (Blue Dashed)**: Symmetric parabola. It assumes a +5% rally and a -5% crash increase volatility by the exact same amount.
+*   **EGARCH (Red Solid)**: Asymmetric curve. It shows that negative shocks (crashes) increase volatility *much more* than positive shocks (rallies).
+*   **Conclusion**: The EGARCH model correctly captures the "panic" dynamic of financial markets, where fear drives volatility higher than greed. This aligns with the leverage effect observed in Section 7.5.
 
 ---
 
@@ -247,14 +267,64 @@ The `dropna()` in `build_and_save_streams` automatically removes rows where any 
 
 ---
 
-## 7. Artifacts
+## 7. Exploratory Data Analysis (EDA) & Visual Proofs
 
-The analysis generates the following visual proofs in `artifacts/plots/data_analysis/`:
-1.  `01_market_overview.png`: History of SPY and VIX.
-2.  `02_volatility_clustering.png`: Visual evidence of ARCH effects.
-3.  `03_distribution_fat_tails.png`: Empirical distribution vs. Normal vs. Student-t.
-4.  `04_autocorrelation_check.png`: ACF plots confirming mean independence but variance dependence.
-5.  `05_leverage_effect.png`: Correlation bar chart showing the leverage effect.
+We generate a comprehensive suite of plots in `artifacts/plots/data_analysis/` to validate our data assumptions and understand market dynamics.
+
+### 7.1 Market Overview (`01_market_overview.png`)
+*   **What it is**: Time series of SPY price and VIX index.
+*   **Why it's useful**: Provides context on market regimes (bull/bear markets) and volatility spikes.
+*   **Interpretation**: Note the inverse relationship; VIX spikes during market crashes (2008, 2020).
+
+### 7.2 Volatility Clustering (`02_volatility_clustering.png`)
+*   **What it is**: Daily log returns and squared returns over time.
+*   **Why it's useful**: Visualizes "ARCH effects" — the tendency for volatility to cluster.
+*   **Interpretation**: Periods of high variance (large squared returns) tend to persist, justifying the use of GARCH/LSTM models which have memory.
+
+### 7.3 Distribution Analysis (`03_distribution_fat_tails.png`)
+*   **What it is**: Histogram of returns overlaid with Normal and Student-t distributions.
+*   **Why it's useful**: Checks the Normality assumption.
+*   **Interpretation**: The "tall peak" and "fat tails" (excess kurtosis) show that extreme events happen far more often than a Normal distribution predicts. This confirms we must use heavy-tailed distributions (like Student-t) for modeling.
+
+### 7.4 Autocorrelation (`04_autocorrelation_check.png`)
+*   **What it is**: ACF of raw returns vs. squared returns.
+*   **Why it's useful**: Tests for serial correlation.
+*   **Interpretation**:
+    *   **Raw Returns**: No significant autocorrelation (Market Efficiency / Random Walk).
+    *   **Squared Returns**: Strong, persistent autocorrelation. This confirms that while *direction* is hard to predict, *magnitude* (volatility) is highly predictable.
+
+### 7.5 Leverage Effect (`05_leverage_effect.png`)
+*   **What it is**: Correlation between returns at $t$ and volatility at $t+k$.
+*   **Why it's useful**: Checks if negative returns impact volatility differently than positive ones.
+*   **Interpretation**: Negative correlations indicate the "Leverage Effect": market drops cause panic (higher vol), while rallies decrease vol. This justifies using EGARCH (asymmetric) over standard GARCH.
+
+### 7.6 RV vs. VIX & Risk Premium (`06_rv_vs_vix.png`)
+*   **What it is**: Comparison of 30-day Realized Volatility (RV) and Implied Volatility (VIX), plus the spread (VIX - RV).
+*   **Why it's useful**: Analyzes the "Volatility Risk Premium" (VRP).
+*   **Interpretation**:
+    *   **VIX > RV**: Usually, VIX trades above RV (Positive VRP), as investors pay a premium for options protection.
+    *   **VIX < RV**: In extreme crashes, realized volatility can exceed implied volatility.
+    *   **Tracking**: VIX is a strong predictor of future RV, making it a crucial feature.
+
+### 7.7 RV Term Structure (`07_rv_horizons.png`)
+*   **What it is**: Realized Volatility calculated over different horizons (e.g., 5-day vs. 30-day).
+*   **Why it's useful**: Shows the noise level differences.
+*   **Interpretation**: Short-term RV (5-day) is much noisier and spikes faster. Long-term RV (30-day) is smoother. Our models need to handle these different dynamics.
+
+### 7.8 Feature Correlation (`08_correlation_matrix.png`)
+*   **What it is**: Heatmap of correlations between Returns, VIX, and RV targets.
+*   **Why it's useful**: Identifies multicollinearity and predictive relationships.
+*   **Interpretation**:
+    *   **VIX vs RV**: High positive correlation (good predictor).
+    *   **Returns vs VIX/RV**: Negative correlation (Leverage effect).
+    *   **RV_5 vs RV_30**: High correlation, implying persistence across time scales.
+
+### 7.9 Q-Q Plot (`09_qq_plot.png`)
+*   **What it is**: Quantile-Quantile plot of returns against a Normal distribution.
+*   **Why it's useful**: A rigorous test for non-normality.
+*   **Interpretation**:
+    *   **Straight line**: Data is Normal.
+    *   **S-shape (deviations at ends)**: Fat tails. Our plot shows significant deviation at the extremes, confirming that a Gaussian model would underestimate risk (VaR/ES).
 
 ---
 
