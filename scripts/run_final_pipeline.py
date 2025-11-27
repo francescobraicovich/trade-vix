@@ -21,6 +21,13 @@ def run_command(command, description):
         print(f"Error running command: {e}")
         sys.exit(1)
 
+def run_download_data():
+    python_exec = sys.executable
+    run_command(
+        f"{python_exec} scripts/download_data.py",
+        "Downloading Latest Data"
+    )
+
 def cleanup_artifacts():
     print("\n=== Cleaning Artifacts ===")
     artifacts_dir = Path("artifacts")
@@ -33,16 +40,24 @@ def cleanup_artifacts():
     (artifacts_dir / "plots").mkdir()
     print("Artifacts directory cleaned and recreated.")
 
-def run_training_pipeline():
+def run_garch_diagnostics():
     python_exec = sys.executable
-    
-    # 1. GARCH Grid Search & Diagnostics
     run_command(
         f"{python_exec} scripts/garch_diagnostics.py",
         "GARCH Grid Search & Diagnostics"
     )
+
+def generate_data_plots():
+    python_exec = sys.executable
+    run_command(
+        f"{python_exec} scripts/generate_data_plots.py",
+        "Generating Data Plots"
+    )
+
+def run_training_pipeline():
+    python_exec = sys.executable
     
-    # 2. Train Models
+    # Train Models
     # We need to train for each horizon? 
     # run_train.py handles multiple horizons if specified in config.
     # Let's check train.yaml to see if the horizons are set there.
@@ -426,6 +441,9 @@ def run_strategies_and_backtest():
 
 def main():
     cleanup_artifacts()
+    run_download_data()
+    generate_data_plots()
+    run_garch_diagnostics()
     run_training_pipeline()
     run_strategies_and_backtest()
 

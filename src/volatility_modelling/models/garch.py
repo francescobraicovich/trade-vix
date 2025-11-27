@@ -80,16 +80,23 @@ class GarchModel(BaseModel):
         horizon = spec["horizon_days"]
         annualization = spec["annualization"]
         
+        # Retrieve the scale factor used during training
+        scale_factor = self.res.scale
+        
+        # Manually scale the returns using the training scale factor
+        # This ensures consistency with the fitted parameters
+        scaled_returns = returns * scale_factor
+        
         # Create a new model with the full data to forecast out-of-sample
-        # We use the same specification as the fitted model
+        # We set rescale=False because we have already manually scaled the data
         full_model = arch_model(
-            returns,
+            scaled_returns,
             mean=spec["mean"],
             vol=spec["vol"],
             p=spec["p"],
             q=spec["q"],
             dist=spec["dist"],
-            rescale=True # Must match training
+            rescale=False 
         )
         
         # Forecast using the fitted parameters
@@ -116,9 +123,8 @@ class GarchModel(BaseModel):
         variance_paths = forecasts.variance.loc[valid_origins]
         
         # Adjust for scaling
-        # arch automatically scales returns by self.res.scale
-        # So variance output is scaled by self.res.scale^2
-        scale_factor = self.res.scale
+        # The variance output is for the scaled data, so it is scaled by scale_factor^2
+        # We need to divide by scale_factor^2 to get back to the original scale
         variance_paths = variance_paths / (scale_factor ** 2)
         
         # Sum variances over horizon

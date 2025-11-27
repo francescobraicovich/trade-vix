@@ -62,8 +62,24 @@ class LSTMModel(BaseModel):
         super().__init__(cfg)
         self.scaler = StandardScaler()
         self.model = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() and cfg["opt"]["device"] != "cpu" else "cpu")
-        if cfg["opt"]["device"] == "cpu": self.device = torch.device("cpu")
+        
+        # Device selection: cuda > mps > cpu
+        device_cfg = cfg["opt"].get("device", "auto")
+        if device_cfg == "cpu":
+            self.device = torch.device("cpu")
+        elif device_cfg == "cuda":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif device_cfg == "mps":
+            self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        else:  # "auto"
+            if torch.cuda.is_available():
+                self.device = torch.device("cuda")
+            elif torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+            else:
+                self.device = torch.device("cpu")
+        
+        print(f"LSTM using device: {self.device}")
         
     def _build_model(self, input_dim):
         spec = self.cfg["spec"]
