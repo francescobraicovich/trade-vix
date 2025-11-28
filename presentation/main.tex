@@ -1,0 +1,2181 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% A Beamer template for HKUST (GZ)                   %
+% Based on THU beamer theme                          %
+% Author: Yuxuan HU                                  %
+% Date: Aug 2024                                    %
+% LPPL Licensed.                                     %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[serif, aspectratio=169]{beamer}
+%\documentclass[serif]{beamer}  % for 4:3 ratio
+\usepackage[T1]{fontenc} 
+\usepackage{fourier} % see "http://faq.ktug.org/wiki/uploads/MathFonts.pdf" for other options
+\usepackage{hyperref}
+\usepackage{latexsym,amsmath,xcolor,multicol,booktabs,calligra}
+\usepackage{graphicx,pstricks,listings,stackengine}
+\usepackage{lipsum}
+\usepackage[dvipsnames]{xcolor}
+
+
+\author{Francesco Braicovich, Nikhil Joseph, Qin Zhihua (Ivan)}
+\title{Volatility Modeling \& Trading}
+\subtitle{Predicting Realized Volatility Across Multiple Horizons}
+\institute{
+   Statistical Modelling in Financial Engineering - IEDA 4000E \\
+    The Hong Kong University of Science and Technology \\
+}
+\date{\small November 2025}
+\usepackage{HKUSTstyle}
+
+% Reduce spacing between bullet points and fix overflow issues
+\setlength{\itemsep}{1pt}
+\let\olditemize\itemize
+\renewcommand{\itemize}{\olditemize\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}}
+
+% Reduce spacing in blocks and columns
+\setbeamertemplate{block begin}{
+  \vskip.5ex
+  \begin{beamercolorbox}[ht=2.4ex,dp=1ex,center,rounded=true,shadow=true,leftskip=1ex,colsep*=.75ex]{block title}%
+    \usebeamerfont*{block title}\insertblocktitle
+  \end{beamercolorbox}%
+  {\ifbeamercolorempty[bg]{block body}{}{\nointerlineskip\vskip-0.5pt}}%
+  \usebeamerfont{block body}%
+  \begin{beamercolorbox}[rounded=true,shadow=true,leftskip=1ex,colsep*=.75ex,sep=1ex,vmode]{block body}%
+    \ifbeamercolorempty[bg]{block body}{\vskip-.25ex}{\vskip-.75ex}\vbox{}%
+}
+\setbeamertemplate{block end}{
+  \end{beamercolorbox}
+}
+
+% Reduce font size globally for better fit
+\setbeamerfont{itemize/enumerate body}{size=\small}
+\setbeamerfont{itemize/enumerate subbody}{size=\footnotesize}
+
+% defs
+\def\cmd#1{\texttt{\color{red}\footnotesize $\backslash$#1}}
+\def\env#1{\texttt{\color{blue}\footnotesize #1}}
+% set colors
+\definecolor{hkustyellow}{RGB}{167, 131, 55}
+\definecolor{hkustblue}{RGB}{0, 56, 116}
+\definecolor{hkustred}{RGB}{209, 51, 59}
+
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\bfseries\color{deepblue},
+    emphstyle=\ttfamily\color{deepred},    % Custom highlighting style
+    stringstyle=\color{deepgreen},
+    numbers=left,
+    numberstyle=\small\color{halfgray},
+    rulesepcolor=\color{red!20!green!20!blue!20},
+    frame=shadowbox,
+}
+
+%- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- 
+\begin{document}
+
+\begin{frame}
+    \titlepage
+    \vspace*{-0.6cm}
+    \begin{figure}[htpb]
+        \begin{center}
+            \includegraphics[keepaspectratio, scale=0.02]{pic/UST.png}
+        \end{center}
+    \end{figure}
+\end{frame}
+
+\begin{frame}    
+\tableofcontents[sectionstyle=show,
+subsectionstyle=show/shaded/hide,
+subsubsectionstyle=show/shaded/hide]
+\end{frame}
+
+% ================================================================
+% SECTION 1: INTRODUCTION & PROJECT OVERVIEW
+% ================================================================
+
+\section{Introduction}
+
+\begin{frame}{Research Motivation}
+        Can we predict future realized volatility accurately enough to identify mispricings in the volatility market?
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{The Volatility Risk Premium (VRP):}
+            \begin{itemize}
+                \item VIX (Implied Volatility) typically exceeds Realized Volatility
+                \item Investors pay premium for protection
+                \item Systematic opportunity for sellers
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Our Approach:}
+            \begin{itemize}
+                \item Forecast RV using multiple models
+                \item Compare to VIX (market expectations)
+                \item Identify when VIX is overpriced
+                \item $\text{VRP} = \text{VIX} - \widehat{RV}$
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Project Scope}
+        We predict realized volatility across \textbf{four time horizons}:
+        \begin{itemize}
+            \item h=2 days (ultra-short term)
+            \item h=5 days (one trading week)
+            \item h=10 days (two weeks)
+            \item h=30 days (one month, matches VIX)
+        \end{itemize}
+    
+    \vspace{0.2cm}
+    
+        Three distinct modeling philosophies:
+        \begin{enumerate}
+            \item \textbf{GARCH/EGARCH}: Econometric approach (leverage effect, volatility clustering)
+            \item \textbf{LSTM-RV}: Deep learning on historical realized volatility
+            \item \textbf{LSTM-VIX}: Deep learning to "de-bias" implied volatility
+        \end{enumerate}
+\end{frame}
+
+\begin{frame}{Test Period \& Data Sources}
+    \begin{columns}[T]
+        \begin{column}{0.58\textwidth}
+            \textbf{Data Coverage (1990-2025):}
+            \begin{itemize}
+                \item Train: 1993-2015 (23 years)
+                \item Validation: 2016-2019 (4 years)
+                \item Test: 2020-2025 (5.5 years)
+                \item Daily frequency, Yahoo Finance
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Instruments:}
+            \begin{itemize}
+                \item SPY: S\&P 500 ETF
+                \item \^{}VIX: CBOE Volatility Index
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.38\textwidth}
+            \textbf{Why This Period?}
+            \begin{itemize}
+                \item Dot-com (2000-2002)
+                \item Financial crisis (2008)
+                \item COVID crash (2020)
+                \item Inflation (2022)
+                \item Multiple regimes
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textcolor{hkustred}{\textbf{Rigorous out-of-sample testing!}}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ================================================================
+% SECTION 2: DATA METHODOLOGY
+% ================================================================
+
+\section{Data Methodology}
+
+\begin{frame}{Feature Engineering: Target Variable}
+        $$RV_{t,h}^{fwd} = \sqrt{252} \times \text{std}(r_{t+1}, r_{t+2}, \ldots, r_{t+h})$$
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Components:}
+            \begin{itemize}
+                \item $r_{t+i}$: Log return on day $i$
+                \item $\text{std}(\cdot)$: Standard deviation
+                \item $\sqrt{252}$: Annualization factor
+                \item $h$: Forecast horizon
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Key Properties:}
+            \begin{itemize}
+                \item Uses \textbf{only future returns} ($t+1$ to $t+h$)
+                \item Zero lookahead bias by construction
+                \item Computed for all h $\in$ \{2, 5, 10, 30\}
+                \item Represents actual volatility realized
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{This is what the market tries to predict with VIX}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Feature Engineering: Input Features}
+        Models can only use information available \textbf{up to and including} time $t$
+    
+    \vspace{0.2cm}
+    
+    \begin{enumerate}
+        \item \textbf{Backward Realized Volatility} ($RV_{t,h}^{back}$)
+        \begin{itemize}
+            \item Historical volatility over \textit{past} $h$ days
+            \item $RV_{t,h}^{back} = \sqrt{252} \times \text{std}(r_{t-h+1}, \ldots, r_t)$
+            \item Captures recent market turbulence
+            \item Used by LSTM-RV models
+        \end{itemize}
+        
+        \vspace{0.2cm}
+        
+        \item \textbf{Implied Volatility} ($IV_t$ from VIX)
+        \begin{itemize}
+            \item Market's expectation of future 30-day volatility
+            \item Forward-looking collective wisdom
+            \item Already available before market close at $t$
+            \item Used by LSTM-VIX model
+        \end{itemize}
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}{Log Transformation: Model-Specific Approach}
+        Volatility is strictly positive but unbounded $\Rightarrow$ skewed, heteroskedastic
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Before Log Transform:}
+            \begin{itemize}
+                \item Distribution highly skewed
+                \item Extreme outliers (crisis periods)
+                \item Models struggle with scale
+                \item Predictions can be negative!
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            $$y = RV \in (0, \infty)$$
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{After Log Transform:}
+            \begin{itemize}
+                \item Approximately Normal distribution
+                \item Compressed extreme values
+                \item Stabilized variance
+                \item Predictions always positive after $\exp(\cdot)$
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            $$y = \log(RV) \in (-\infty, \infty)$$
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.15cm}
+    
+    \begin{itemize}
+        \item \textbf{LSTM Models:} Predict $\log(RV)$ directly, then apply $\exp(\cdot)$ to get $RV$
+        \item \textbf{GARCH/EGARCH:} Models $\log(\sigma^2_t)$ internally; predicts $RV$ from variance forecasts (not log-transformed)
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Lookahead Bias Prevention: Critical Detail}
+        At time $t$, if we predict $RV_{fwd}[t]$ using returns from $t+1$ to $t+h$, and our training set ends exactly at validation start, the \textbf{last training samples leak into validation period!}
+    
+    \vspace{0.2cm}
+    
+        \textbf{Training Gap:} Remove samples where target horizon extends into validation
+        \begin{itemize}
+            \item Training ends: $\text{train\_end} - (h \times 1.5)$ calendar days
+            \item Factor 1.5 accounts for weekends/holidays
+            \item For h=30: $\sim$45 calendar day gap = 30 trading days safe
+        \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Result: Zero information leakage from future to past}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Market Overview: 35 Years of Data}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \textbf{Key Observations:}
+            
+            \vspace{0.2cm}
+            
+            \textbf{SPY (Top Panel):}
+            \begin{itemize}
+                \item Strong upward trend
+                \item Non-stationary process
+                \item Multiple bull/bear cycles
+                \item Returns, not prices, are predictable
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{VIX (Bottom Panel):}
+            \begin{itemize}
+                \item Mean-reverting around 15-20
+                \item Sharp spikes during crises
+                \item Dot-com (2000-2002): VIX $\sim$45
+                \item Financial crisis (2008): VIX $>$80
+                \item COVID (2020): VIX $\sim$80
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.5\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\textwidth]{pic/01_market_overview.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustred}{\textbf{Inverse relationship: VIX explodes when SPY crashes}}
+    \end{center}
+\end{frame}
+
+
+\begin{frame}{Autocorrelation Analysis}
+    \begin{columns}[T]
+        \begin{column}{0.45\textwidth}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Raw Returns:}
+            \begin{itemize}
+                \item ACF stays within blue bands
+                \item No significant autocorrelation
+                \item \textcolor{hkustblue}{Returns are unpredictable}
+                \item Efficient Market Hypothesis holds
+                \item Cannot predict next day's return
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.55\textwidth}
+            \vspace{0.2cm}
+            \begin{figure}
+                \centering
+                \includegraphics[width=1\textwidth]{pic/stationarity_acf.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+
+\end{frame}
+
+
+\begin{frame}{Statistical Test 1: Stationarity (ADF Test)}
+        Non-stationary series have time-varying mean/variance $\Rightarrow$ \textbf{spurious regressions}
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Augmented Dickey-Fuller Test:}
+            \begin{itemize}
+                \item $H_0$: Unit root (non-stationary)
+                \item $H_1$: Stationary
+                \item Test statistic: -58.34
+                \item \textbf{p-value: $<$ 0.0001}
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            $$\Delta r_t = \alpha + \beta r_{t-1} + \sum_{i=1}^p \gamma_i \Delta r_{t-i} + \epsilon_t$$
+            
+            \vspace{0.2cm}
+            
+            If $\beta < 0$ significantly $\Rightarrow$ mean reversion
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Result Interpretation:}
+            \begin{itemize}
+                \item \textcolor{hkustblue}{Reject $H_0$ at 0.1\% level}
+                \item Returns are stationary
+                \item Mean and variance are stable over time
+                \item Safe to use standard regression models
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Why This Test:}
+            \begin{itemize}
+                \item Prices grow exponentially (non-stationary)
+                \item Returns fluctuate around zero (stationary)
+                \item We model returns, not prices
+                \item Avoids spurious correlations
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+
+\begin{frame}{Statistical Test 2: Stationarity (KPSS Test)}
+        KPSS has opposite null hypothesis: $H_0$ = stationary (vs ADF: $H_0$ = non-stationary)
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Test Results:}
+            \begin{itemize}
+                \item Test statistic: 0.116
+                \item Critical (5\%): 0.463
+                \item \textbf{p-value: 0.10}
+                \item \textcolor{hkustblue}{Fail to reject $H_0$}
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            Tests: $r_t = \mu + \eta_t$ (stationary)
+            
+            vs trend-stationary or random walk
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Interpretation:}
+            \begin{itemize}
+                \item Evidence for stationarity
+                \item Consistent with ADF
+                \item Robust conclusion from both tests
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Why Dual Testing:}
+            \begin{itemize}
+                \item ADF: reject non-stationarity
+                \item KPSS: accept stationarity
+                \item Agreement $\Rightarrow$ high confidence
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Visual Evidence: Volatility Clustering}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            
+            \textbf{Calm Periods:}
+            \begin{itemize}
+                \item 1993-1997: Low, stable volatility
+                \item 2003-2007: "Great Moderation"
+                \item 2012-2019: Extended calm
+                \item Returns within $\pm$1\% daily
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Crisis Periods:}
+            \begin{itemize}
+                \item 2008-2009: Persistent wild swings
+                \item March 2020: COVID shock
+                \item 2022: Inflation fears
+                \item Returns $\pm$5-10\% daily for weeks
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\textwidth]{pic/02_volatility_clustering.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Volatility has "regimes" that persist - this is why GARCH works}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Autocorrelation Analysis}
+        \textit{"Large changes tend to be followed by large changes, of either sign, and small changes tend to be followed by small changes"} - Benoit Mandelbrot
+    
+    \vspace{0.2cm}
+    \begin{columns}[T]
+        \begin{column}{0.45\textwidth}
+            \vspace{0.35cm}
+            \textbf{Squared Returns (Right Panel):}
+            \begin{itemize}
+                \item ACF far above blue bands
+                \item Strong autocorrelation up to 20 lags
+                \item \textcolor{hkustred}{Volatility is predictable!}
+                \item Today's volatility $\Rightarrow$ tomorrow's
+                \item Justifies volatility modeling
+            \end{itemize}
+
+        \end{column}
+        
+        \begin{column}{0.45\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=1\textwidth]{pic/arch_acf.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+
+\end{frame}
+
+\begin{frame}{Statistical Test 3: Volatility Clustering (ARCH-LM)}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{ARCH-LM Test:}
+            \begin{itemize}
+                \item $H_0$: No ARCH effects (homoskedastic)
+                \item $H_1$: ARCH effects present
+                \item Test statistic: 1389.1
+                \item \textbf{p-value: $<$ 0.0001}
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            Tests if squared residuals are autocorrelated:
+            $$\epsilon_t^2 = \alpha_0 + \sum_{i=1}^q \alpha_i \epsilon_{t-i}^2 + u_t$$
+            
+            If $\alpha_i$ significant $\Rightarrow$ volatility clustering
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Result Interpretation:}
+            \begin{itemize}
+                \item \textcolor{hkustred}{Strongly reject $H_0$}
+                \item Massive test statistic (1389!)
+                \item Volatility is \textbf{highly clustered}
+                \item Today's volatility predicts tomorrow's
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Implication for Modeling:}
+            \begin{itemize}
+                \item Cannot use constant variance models
+                \item \textbf{GARCH family is justified}
+                \item Volatility has memory
+                \item Crisis periods persist for weeks
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Visual Evidence: Fat Tails vs Normal Distribution}
+    \begin{columns}[T]
+        \begin{column}{0.52\textwidth}
+            \textbf{Key Findings:}
+            
+            \vspace{0.2cm}
+            
+            \begin{itemize}
+                \item Gray: Actual distribution
+                \item Red: Normal fit
+                \item \textcolor{hkustred}{\textbf{Massive tail divergence}}
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Extreme Events (|return| $>$ 3\%):}
+            \begin{itemize}
+                \item Normal predicts: $\sim$30 days
+                \item Reality: $\sim$180 days
+                \item \textbf{6x more frequent!}
+            \end{itemize}
+            
+        \end{column}
+        
+        \begin{column}{0.44\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\textwidth]{pic/03_distribution_fat_tails.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Q-Q Plot: Visual Test of Normality}
+    \begin{columns}[T]
+        \begin{column}{0.52\textwidth}
+            
+            \begin{itemize}
+                \item \textbf{S-shaped curve}
+                \item Tails deviate from line
+                \item \textcolor{hkustred}{Fat tails confirmed}
+            \end{itemize}
+            
+            \vspace{0.5cm}
+            
+            \textbf{Implication:}
+            \begin{itemize}
+                \item Extreme events more frequent
+                \item Student-t fits better ($\nu \sim 6$)
+                \item GARCH must use Student-t
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.44\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\textwidth]{pic/09_qq_plot.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+
+\begin{frame}{Statistical Test 4: Normality (Jarque-Bera)}
+        Gaussian assumption affects risk estimates and confidence intervals
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Test Results:}
+            \begin{itemize}
+                \item $H_0$: Normal distribution
+                \item \textbf{p-value: $<$ 0.0001}
+                \item \textcolor{hkustred}{Strongly reject}
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            $$JB = \frac{n}{6}\left(S^2 + \frac{(K-3)^2}{4}\right)$$
+            
+            \begin{itemize}
+                \item Skewness: -0.11
+                \item Excess kurtosis: 10.02
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Findings:}
+            \begin{itemize}
+                \item Slight negative skew
+                \item \textbf{Massive fat tails}
+                \item Extremes $\gg$ Normal predicts
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Impact:}
+            \begin{itemize}
+                \item 3$\sigma$ events: 0.3\% (Normal) vs 2\% (Actual)
+                \item \textbf{Crashes 6x more frequent!}
+                \item Must use Student-t in GARCH
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+
+\begin{frame}{The Leverage Effect: Why Markets Panic Downward}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            
+            \vspace{0.5cm}
+            
+            \textbf{The Chart Shows:}
+            \begin{itemize}
+                \item Correlation between today's return and future volatility
+                \item X-axis: Days ahead (lag)
+                \item Y-axis: Correlation strength
+                \item \textcolor{hkustred}{All bars negative!}
+            \end{itemize}
+            
+            \vspace{0.5cm}
+            
+            \textbf{Key Insight:}
+            \begin{itemize}
+                \item Negative returns today $\Rightarrow$ high volatility tomorrow
+                \item Positive returns today $\Rightarrow$ low volatility tomorrow
+                \item Effect persists for 10+ days
+            \end{itemize}
+            
+            \vspace{0.5cm}
+            
+            \textbf{Why This Matters:}
+            \begin{itemize}
+                \item Standard GARCH is symmetric
+                \item \textcolor{hkustblue}{EGARCH models this asymmetry}
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.55\textwidth}
+            \vspace{0.5cm}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\textwidth]{pic/05_leverage_effect.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Feature Correlation Matrix: The Information Landscape}
+    \begin{columns}[T]
+        \begin{column}{0.52\textwidth}
+            \textbf{Strong Correlations ($\rho > 0.75$):}
+            \begin{itemize}
+                \item VIX $\leftrightarrow$ RV$_{30}$: 0.82
+                \item VIX $\leftrightarrow$ RV$_{10}$: 0.79
+                \item RV horizons: $>$0.9 (multicollinear)
+                \item \textcolor{hkustblue}{IV captures future RV well}
+            \end{itemize}
+            
+            \vspace{0.05cm}
+            
+            \textbf{Negative ($\rho \sim -0.4$):}
+            \begin{itemize}
+                \item Returns $\leftrightarrow$ All volatilities
+                \item \textcolor{hkustred}{Leverage effect confirmed}
+            \end{itemize}
+            
+            \vspace{0.05cm}
+
+            
+            \textbf{Implications:}
+            \begin{itemize}
+                \item VIX highly informative (67\% R²)
+                \item 33\% variance unexplained $\Rightarrow$ opportunity
+                \item Returns add asymmetry signal
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.55\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\textwidth]{pic/08_correlation_matrix.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+
+% ================================================================
+% SECTION 3: MODEL SELECTION & GARCH
+% ================================================================
+
+\section{Model Selection}
+
+\begin{frame}{Model Selection Strategy: Grid Search}
+        We test multiple specifications systematically:
+        \begin{itemize}
+            \item \textbf{Model families}: GARCH vs EGARCH
+            \item \textbf{Orders}: $(p, q) \in \{(1,1), (1,2), (2,1), (2,2)\}$
+            \item \textbf{Distributions}: Normal, Student-t, Skewed Student-t
+        \end{itemize}
+    
+    \vspace{0.2cm}
+    
+        \textbf{Two-stage process:}
+        \begin{enumerate}
+            \item Filter: Pass ARCH-LM test on residuals (no remaining heteroskedasticity)
+            \item Rank: Choose lowest BIC among passing models
+        \end{enumerate}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Winner: EGARCH(2,1) with Skewed Student-t}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{GARCH: The Symmetric Baseline}
+        $$\sigma_t^2 = \omega + \sum_{i=1}^{p} \alpha_i \epsilon_{t-i}^2 + \sum_{j=1}^{q} \beta_j \sigma_{t-j}^2$$
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Components:}
+            \begin{itemize}
+                \item $\omega$: Long-run average
+                \item $\alpha \epsilon_{t-1}^2$: Shock term
+                \item $\beta \sigma_{t-1}^2$: Persistence
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Interpretation:}
+            \begin{itemize}
+                \item Volatility clustering
+                \item Mean reversion
+                \item \textcolor{hkustred}{Symmetric response}
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+        Squaring $\epsilon_{t-1}$ means +5\% rally and -5\% crash have \textbf{identical} impact on volatility. This contradicts empirical evidence!
+\end{frame}
+
+\begin{frame}{EGARCH: Capturing Asymmetry}
+        $$\ln(\sigma_t^2) = \omega + \beta \ln(\sigma_{t-1}^2) + \alpha \left( \left| \frac{\epsilon_{t-1}}{\sigma_{t-1}} \right| - \sqrt{\frac{2}{\pi}} \right) + \gamma \frac{\epsilon_{t-1}}{\sigma_{t-1}}$$
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.58\textwidth}
+            \textbf{Key Innovation: The $\gamma$ term}
+            \begin{itemize}
+                \item When $\gamma < 0$ (typical): negative returns $\Rightarrow$ higher volatility
+                \item Captures "panic" vs "greed" asymmetry
+                \item Leverage effect built into model
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Log Specification Benefits:}
+            \begin{itemize}
+                \item Guarantees $\sigma^2 > 0$ always
+                \item No parameter constraints needed
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.38\textwidth}
+            \textbf{Our Results:}
+            \begin{itemize}
+                \item EGARCH(2,1) + skewt
+                \item BIC: 15,401.9
+                \item vs GARCH(2,1) + skewt
+                \item BIC: 15,638.5
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textcolor{hkustblue}{\textbf{EGARCH wins by 237 BIC points}}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{GARCH vs EGARCH: News Impact Curve}
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.75\textwidth]{pic/10_garch_vs_egarch_nic.png}
+    \end{figure}
+    \vspace{-0.3cm}
+    \begin{itemize}
+        \item \textbf{GARCH (blue dashed)}: Symmetric parabola - same response to $\pm$5\% moves
+        \item \textbf{EGARCH (red solid)}: Asymmetric - negative shocks increase volatility much more
+        \item EGARCH correctly captures market panic dynamics
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{GARCH Model Diagnostics}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Residual Tests (EGARCH(2,1)):}
+            \begin{itemize}
+                \item ARCH-LM test: $p = 0.839$
+                \item Ljung-Box: $p = 0.851$
+                \item \textcolor{hkustblue}{No remaining heteroskedasticity}
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Parameter Estimates:}
+            \begin{itemize}
+                \item All coefficients significant
+                \item $\gamma < 0$ confirms leverage effect
+                \item Persistence: $\alpha + \beta \approx 0.98$
+                \item High persistence $\Rightarrow$ shocks last
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Skewed Student-t Parameters:}
+            \begin{itemize}
+                \item Degrees of freedom: $\nu \approx 6$
+                \item Skewness parameter: negative
+                \item Captures both fat tails and asymmetry
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Model Quality:}
+            \begin{itemize}
+                \item BIC: 15,401.9 (lowest)
+                \item AIC: 15,358.6
+                \item Log-likelihood: -7,669.3
+                \item Converged successfully
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ================================================================
+% SECTION 4: DEEP LEARNING MODELS
+% ================================================================
+
+\section{Deep Learning Models}
+
+\begin{frame}{Why Neural Networks for Volatility?}
+        \begin{itemize}
+            \item Assumes volatility follows strict parametric formula
+            \item Limited flexibility in capturing complex patterns
+            \item May miss regime changes or structural breaks
+        \end{itemize}
+    
+    \vspace{0.2cm}
+    
+        \begin{itemize}
+            \item \textbf{Non-parametric}: Learn patterns directly from data
+            \item \textbf{Flexible}: Capture non-linear relationships
+            \item \textbf{Adaptive}: Can learn regime-dependent behavior
+            \item \textbf{High-dimensional}: Handle multiple features naturally
+        \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{But: Need sequential memory for time series $\Rightarrow$ LSTMs}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Recurrent Neural Networks: The Memory Concept}
+        \begin{itemize}
+            \item \textbf{Feed-forward NN}: Sees each day independently
+            \item \textbf{RNN}: Maintains "hidden state" $h_t$ that summarizes history
+        \end{itemize}
+    
+    $$h_t = \tanh(W_x x_t + W_h h_{t-1} + b)$$
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Intuition:}
+            \begin{itemize}
+                \item Processes data sequentially
+                \item $h_t$ = compressed memory
+                \item Can "remember" past patterns
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Problem:}
+            \begin{itemize}
+                \item Vanishing gradients
+                \item Forgets distant past
+                \item "Goldfish memory"
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustred}{\textbf{Solution: Long Short-Term Memory (LSTM)}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{LSTM Architecture: Gating Mechanisms}
+        LSTMs add a "cell state" $C_t$ with three gates controlling information flow:
+    
+    \begin{columns}[T]
+        \begin{column}{0.3\textwidth}
+            \textbf{Forget Gate:}
+            \begin{itemize}
+                \item What to discard
+                \item $f_t = \sigma(W_f \cdot [h_{t-1}, x_t])$
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.3\textwidth}
+            \textbf{Input Gate:}
+            \begin{itemize}
+                \item What to store
+                \item $i_t = \sigma(W_i \cdot [h_{t-1}, x_t])$
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.3\textwidth}
+            \textbf{Output Gate:}
+            \begin{itemize}
+                \item What to output
+                \item $o_t = \sigma(W_o \cdot [h_{t-1}, x_t])$
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+        Can maintain long-term memory (e.g., "we're in a crisis regime") over 60+ days without degradation
+\end{frame}
+
+\begin{frame}{Our LSTM Architectures}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{LSTM-RV (The Historian)}
+            
+                \begin{itemize}
+                    \item Input: Past RV (backward-looking)
+                    \item Bidirectional LSTM
+                    \item 2 layers, 128 units each
+                    \item Dropout: 0.2
+                \end{itemize}
+            
+            \textbf{Role:}
+            \begin{itemize}
+                \item Captures complex autoregressive patterns
+                \item Learns non-linear volatility persistence
+                \item Identifies regime transitions
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{LSTM-VIX (The Translator)}
+            
+                \begin{itemize}
+                    \item Input: VIX (implied volatility)
+                    \item Bidirectional LSTM
+                    \item 2 layers, 128 units each
+                    \item Dropout: 0.2
+                \end{itemize}
+            
+            \textbf{Role:}
+            \begin{itemize}
+                \item "De-biases" VIX
+                \item Learns $f(\text{VIX}) \to \text{RV}$
+                \item Forward-looking (market expectations)
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Both use 60-day sequence length for context}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Bidirectional LSTMs: Reading History Both Ways}
+        In time series, future context (within training window) can help understand patterns:
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Forward LSTM:}
+            \begin{itemize}
+                \item Reads $t-60 \to t-1 \to t$
+                \item Captures trends
+                \item Sees how we got here
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Combined Output:}
+            \begin{itemize}
+                \item Concatenate both directions
+                \item Richer representation
+                \item Better pattern recognition
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Backward LSTM:}
+            \begin{itemize}
+                \item Reads $t \to t-1 \to t-60$
+                \item Captures structure
+                \item Sees overall pattern
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{No Lookahead Bias:}
+            \begin{itemize}
+                \item Only uses $t-60$ to $t$
+                \item Target is $t+1$ to $t+h$
+                \item Strict temporal separation
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Training Protocol: Preventing Overfitting}
+        \begin{itemize}
+            \item \textbf{Train}: 1993-2015 (5,744 days) - Model parameter estimation
+            \item \textbf{Validation}: 2016-2019 (1,006 days) - Early stopping \& hyperparameter tuning
+            \item \textbf{Test}: 2020-2025 (1,455 days) - Truly out-of-sample evaluation
+        \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Regularization:}
+            \begin{itemize}
+                \item Dropout: 0.2
+                \item L2 weight decay
+                \item Early stopping (patience=10)
+                \item Batch normalization
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Optimization:}
+            \begin{itemize}
+                \item Adam optimizer
+                \item Initial LR: 0.001
+                \item ReduceLROnPlateau scheduler
+                \item Batch size: 32
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ================================================================
+% SECTION 5: ENSEMBLE & VALIDATION
+% ================================================================
+
+\section{Ensemble \& Validation}
+
+\begin{frame}{The Ensemble Philosophy: Diverse Perspectives}
+    Each model has different "blind spots" - combining them creates robustness
+    
+    \vspace{0.2cm}
+    
+    \begin{tabular}{p{2.5cm} p{4.5cm} p{4.5cm}}
+        \textbf{Model} & \textbf{Strength} & \textbf{Weakness} \\
+        \hline
+        \textbf{GARCH} & Theoretically grounded, captures leverage effect, stable & Rigid parametric form, slow to adapt to regime changes \\[0.3cm]
+        \textbf{LSTM-RV} & Flexible non-linear patterns, learns from history & Backward-looking only, no forward market info \\[0.3cm]
+        \textbf{LSTM-VIX} & Forward-looking market expectations, captures sentiment & Biased by risk premium, can overreact to fear \\
+    \end{tabular}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Ensemble = Best of all worlds}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Multi-Horizon Forecasting: Why Different Horizons?}
+    \begin{columns}[T]
+        \begin{column}{0.41\textwidth}
+            \textbf{h=2 days:}
+            \begin{itemize}
+                \item Highly volatile
+                \item Hardest to predict
+            \end{itemize}
+            
+            \vspace{0.05cm}
+            
+            \textbf{\textcolor{cyan}{h=5 days:}}
+            \begin{itemize}
+                \item One trading week
+                \item Moderate predictability
+            \end{itemize}
+            
+            \vspace{0.05cm}
+            
+            \textbf{h=10, \textcolor{orange}{h=30 days:}}
+            \begin{itemize}
+                \item Smoother trajectories
+                \item Easier to forecast
+                \item h=30 matches VIX
+            \end{itemize}
+            
+            \vspace{0.05cm}
+            
+            \textcolor{hkustblue}{\textbf{Longer horizons $\Rightarrow$ lower noise}}
+        \end{column}
+        
+        \begin{column}{0.57\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=1\textwidth]{pic/07_rv_horizons.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% --- INSERTED: GARCH multi-step forecasting slide ---
+\begin{frame}{GARCH: Multi-Step Forecasting}
+    \textbf{Iterate the variance recursion:}
+    $$\sigma_{t+1|t}^2 = \omega + \alpha_1 r_t^2 + \alpha_2 r_{t-1}^2 + \beta_1 \sigma_t^2$$
+    $$\sigma_{t+k|t}^2 = \omega + (\alpha_1+\beta_1)\sigma_{t+k-1|t}^2 + \alpha_2\sigma_{t+k-2|t}^2 \quad (k \geq 2)$$
+    
+    \vspace{0.3cm}
+    
+    \textbf{Aggregate to forward $h$-day RV:}
+    $$\boxed{\widehat{RV}^{fwd}_h(t) = \sqrt{\frac{252}{h}\sum_{i=1}^{h} \sigma_{t+i|t}^2}}$$
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Sum future variances $\rightarrow$ average $\rightarrow$ annualize}}
+    \end{center}
+\end{frame}
+
+% --- INSERTED: LSTM multi-horizon slide ---
+\begin{frame}{LSTMs: Direct Multi-Horizon Prediction}
+    \textbf{No rollout needed — predict $RV^{fwd}_h$ directly:}
+    $$\widehat{RV}^{fwd}_h = \exp\Big(f_\theta(X_{t-59:t})\Big)$$
+    
+    \vspace{0.3cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{GARCH approach:}
+            \begin{itemize}
+                \item Iterate $\sigma^2_{t+1}, \ldots, \sigma^2_{t+h}$
+                \item Aggregate variances
+                \item Error compounds over steps
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{LSTM approach:}
+            \begin{itemize}
+                \item One-shot prediction for each $h$
+                \item Learns $h$-specific patterns
+                \item No compounding error
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Train separate model per horizon}}
+    \end{center}
+\end{frame}
+
+
+
+\begin{frame}{Ensemble Weight Optimization}
+        For each horizon h $\in$ \{2, 5, 10, 30\}:
+        \begin{enumerate}
+            \item Generate predictions from all three models on \textbf{validation set}
+            \item Grid search over weight combinations: $w_g, w_{lrv}, w_{lvix}$ where $w_g + w_{lrv} + w_{lvix} = 1$
+            \item Combine in log-space: $\log(\widehat{RV}_{ens}) = w_g \log(\widehat{RV}_g) + w_{lrv} \log(\widehat{RV}_{lrv}) + w_{lvix} \log(\widehat{RV}_{lvix})$
+            \item Select weights that minimize validation RMSE
+        \end{enumerate}
+    
+    \vspace{0.2cm}
+    
+        \begin{tabular}{c c c c c}
+            \textbf{Horizon} & \textbf{GARCH} & \textbf{LSTM-RV} & \textbf{LSTM-VIX} & \textbf{Val RMSE} \\
+            \hline
+            h=2 & 0.50 & 0.00 & 0.50 & 0.0844 \\
+            h=5 & 0.30 & 0.00 & 0.70 & 0.0599 \\
+            h=10 & 0.30 & 0.00 & 0.70 & 0.0547 \\
+            h=30 & 0.20 & 0.00 & 0.80 & 0.0493 \\
+        \end{tabular}
+\end{frame}
+
+\begin{frame}{Surprising Finding: LSTM-RV Gets Zero Weight}
+        Despite being a sophisticated neural network trained on historical volatility, LSTM-RV receives \textbf{0\% weight} in all four optimal ensembles (h=2,5,10,30)
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textbf{Why would a trained model be completely ignored?}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Explanation 1: Redundancy with GARCH}
+        Both LSTM-RV and GARCH learn from \textbf{historical realized volatility}
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{GARCH's Advantage:}
+            \begin{itemize}
+                \item Explicit autoregressive formula
+                \item Mean reversion built-in
+                \item Leverage effect via EGARCH
+                \item Theoretically grounded
+                \item Converges to long-run variance
+                \item 30+ years of econometric research
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{LSTM-RV's Challenge:}
+            \begin{itemize}
+                \item Learns patterns from data
+                \item Flexible but opaque
+                \item Can overfit to training regimes
+                \item No built-in mean reversion
+                \item May not generalize to 2016-2019
+                \item Needs more data than available
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Result: GARCH captures the same information more efficiently}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Explanation 2: VIX Information Dominates}
+        VIX contains market's collective wisdom about future volatility
+    
+    \vspace{0.2cm}
+    
+    \textbf{Information Content Comparison:}
+    
+    \vspace{0.2cm}
+    
+    \begin{tabular}{p{3cm} p{5cm} p{3cm}}
+        \textbf{Source} & \textbf{Information} & \textbf{R$^2$ with RV} \\
+        \hline
+        Historical RV & What volatility \textit{was} & 0.42 \\[0.2cm]
+        VIX & What market \textit{expects} & 0.67 \\[0.2cm]
+    \end{tabular}
+    
+    \vspace{0.2cm}
+    
+    \begin{itemize}
+        \item VIX explains 67\% of future RV variance
+        \item Historical RV only explains 42\%
+        \item VIX incorporates: options flow, sentiment, macro events, institutional positioning
+        \item Historical RV is backward-looking only
+    \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustred}{\textbf{Once you have VIX, historical RV adds little new information}}
+    \end{center}
+\end{frame}
+
+
+\begin{frame}{Synthesis: Why Zero Weight Makes Sense}
+    \begin{center}
+        \textbf{Bringing It All Together}
+    \end{center}
+    
+    \vspace{0.2cm}
+    
+    \begin{enumerate}
+        \item \textbf{Redundancy}: GARCH captures autoregressive patterns more efficiently than LSTM-RV
+        
+        \vspace{0.2cm}
+        
+        \item \textbf{Information hierarchy}: VIX (forward-looking) $>$ Historical RV (backward-looking)
+        
+        \vspace{0.2cm}
+        
+        \item \textbf{Generalization}: LSTM-RV may overfit to 1993-2015 training regime
+        
+        \vspace{0.2cm}
+        
+        \item \textbf{Ensemble theory}: Need \textit{complementary} models, not similar ones
+    \end{enumerate}
+    
+    \vspace{0.2cm}
+    
+        The optimal ensemble combines:
+        \begin{itemize}
+            \item \textbf{GARCH}: Econometric structure from past volatility (20-50\% weight)
+            \item \textbf{LSTM-VIX}: Neural network de-biasing of market expectations (50-80\% weight)
+        \end{itemize}
+        
+        This pairing provides both theoretical grounding \textit{and} forward-looking information without redundancy.
+\end{frame}
+
+\begin{frame}{Validation Performance: RMSE Across Horizons}
+        Validation RMSE (2016-2019) — Lower is better
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \begin{tabular}{c c c c c}
+            \textbf{Horizon} & \textbf{GARCH} & \textbf{LSTM-RV} & \textbf{LSTM-VIX} & \textbf{Ensemble} \\
+            \hline
+            h=2 & 0.0968 & 0.0960 & 0.0928 & \textcolor{hkustblue}{\textbf{0.0912}} \\
+            h=5 & 0.0686 & 0.0679 & 0.0651 & \textcolor{hkustblue}{\textbf{0.0638}} \\
+            h=10 & 0.0634 & 0.0632 & 0.0602 & \textcolor{hkustblue}{\textbf{0.0589}} \\
+            h=30 & 0.0601 & 0.0598 & 0.0564 & \textcolor{hkustblue}{\textbf{0.0551}} \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.2cm}
+    
+    \textbf{Key Observations:}
+    \begin{itemize}
+        \item Ensemble \textbf{always} outperforms individual models
+        \item LSTM-VIX consistently best single model
+        \item \textbf{Lower RMSE for longer horizons} — targets are smoother (less volatile)
+        \item Absolute error decreases, but relative error stays similar
+        \item h=30 is genuinely easier to predict than h=2 in absolute terms
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Understanding the Horizon Effect: Why RMSE Decreases}
+        RMSE decreases as horizon increases — longer horizons ARE easier in absolute terms:
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{The Time Averaging Effect:}
+            \begin{itemize}
+                \item h=2: volatility of 2 days (noisy)
+                \item h=30: volatility averaged over 30 days (smooth)
+                \item Longer horizons $\Rightarrow$ less volatile targets
+                \item Lower target variability $\Rightarrow$ lower absolute errors
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            $$\text{Var}(\bar{r}_{30}) < \text{Var}(\bar{r}_2)$$
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{GARCH Mean Reversion:}
+            \begin{itemize}
+                \item Short-term: sensitive to recent shocks
+                \item Long-term: forecasts converge to unconditional mean
+                \item h=30 prediction $\approx$ "volatility will be normal"
+                \item Safe but uninformative!
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            $$\sigma^2_{t+k} \to \frac{\omega}{1-\alpha-\beta}$$
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Longer horizons: lower absolute error, similar relative error}}
+    \end{center}
+\end{frame}
+
+
+% ================================================================
+% SECTION 6: TRADING STRATEGIES
+% ================================================================
+
+\section{Trading Strategies}
+
+\begin{frame}{The Central Question}
+    \begin{center}
+        \Large\textit{Where do our volatility predictions actually create value?}
+    \end{center}
+    
+    \vspace{0.4cm}
+    
+    \textbf{Two Hypothesis Families:}
+    \begin{enumerate}
+        \item \textbf{Equity Trading}: Can predictions improve position sizing?
+        \item \textbf{Volatility Trading}: Can predictions identify VRP mispricings?
+    \end{enumerate}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Test Period}: 2020-2025 (out-of-sample)
+    \begin{itemize}
+        \item COVID crash, recovery, 2022 volatility, recent markets
+        \item Expanding windows for all thresholds (no lookahead bias)
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Strategy Overview: Seven Approaches Tested}
+    \textbf{Family 1: Equity Strategies}
+    \begin{enumerate}
+        \item SPY Buy \& Hold — Passive benchmark
+        \item SPY SMA(50) Trend — Avoid bear markets
+        \item SPY Trend + VIX Sizing — Scale by VIX percentile
+        \item SPY Trend + Prediction Sizing — Scale by our forecast
+    \end{enumerate}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Family 2: Volatility Strategies}
+    \begin{enumerate}
+        \setcounter{enumi}{4}
+        \item VRP Unconditional — Always sell volatility
+        \item VRP VIX-Based — Sell when VIX is high
+        \item \textcolor{hkustred}{\textbf{VRP Residual-Based}} — Sell when VIX is \textit{abnormally} high
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}{The Volatility Risk Premium: VIX vs Realized}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Three Time Series:}
+            \begin{itemize}
+                \item \textcolor{cyan}{Blue}: VIX (expectations)
+                \item \textcolor{purple}{Red}: Actual RV
+                \item \textcolor{LimeGreen}{Green}: Positive VIX - RV spread
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Key Patterns:}
+            \begin{itemize}
+                \item VIX $>$ RV most of the time
+                \item Average spread: $\sim$3-5 vol points
+                \item Widens in crises, occasionally inverts
+            \end{itemize}
+            
+            \vspace{0.2cm}
+            
+            \textbf{Trading Opportunity:}
+            \begin{itemize}
+                \item Investors overpay for protection
+                \item Insurance premium = systematic profit
+                \item \textbf{This is what we trade!}
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.5\textwidth}
+            \begin{figure}
+                \centering
+                \includegraphics[width=\textwidth]{pic/06_rv_vs_vix.png}
+            \end{figure}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Position Sizing: VIX vs Prediction}
+    \textbf{Core Idea:} Use more leverage when volatility is low, less when high
+    
+    \vspace{0.3cm}
+    
+    \textbf{Step 1: Trend Filter}
+    $$\text{Trend} = \begin{cases} 1 & \text{if } \text{SPY}_t > \text{SMA}_{50}(t-1) \\ 0 & \text{otherwise (stay in cash)} \end{cases}$$
+    
+    \vspace{0.2cm}
+    
+    \textbf{Step 2: Position Multiplier} (rolling 252-day percentile)
+    $$\text{Multiplier} = 1.0 + 0.5 \times (1 - \text{Percentile}_{t-1})$$
+    
+    \begin{itemize}
+        \item Low volatility (0th pctl): Multiplier = \textbf{1.5$\times$} (use leverage)
+        \item High volatility (100th pctl): Multiplier = \textbf{1.0$\times$} (no leverage)
+    \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \textbf{VIX Sizing:} Percentile of VIX $\quad$ vs $\quad$ \textbf{Pred Sizing:} Percentile of $\widehat{RV}_{ensemble}$
+\end{frame}
+
+\begin{frame}{Equity Strategies: Results Summary}
+    \begin{center}
+        \small
+        \begin{tabular}{l c c c c}
+            \textbf{Strategy} & \textbf{Return} & \textbf{Sharpe} & \textbf{Max DD} & \textbf{Bear Mkt} \\
+            \hline
+            1. Buy \& Hold & 12.5\% & 0.60 & -35.7\% & -44.2\% \\
+            2. SMA Trend & 10.3\% & \textbf{0.89} & -21.2\% & -32.0\% \\
+            3. Trend + VIX & 13.6\% & 0.91 & -27.1\% & -38.2\% \\
+            4. Trend + Pred & 13.2\% & 0.87 & -27.1\% & -38.5\% \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Key Finding:}
+    \begin{itemize}
+        \item Prediction-based sizing performs \textit{identically} to VIX-based sizing
+        \item Correlation between predictions and VIX: $\rho \approx 0.95$
+        \item \textcolor{hkustred}{\textbf{No incremental value for equity position sizing}}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Why Predictions Don't Help Equity Trading}
+    \textbf{The Problem:}
+    \begin{itemize}
+        \item VIX already provides real-time risk information
+        \item Our predictions are highly correlated with VIX ($\rho \approx 0.95$)
+        \item For position sizing, we need a risk indicator — VIX suffices
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    
+    \textbf{The Insight:}
+    \begin{itemize}
+        \item Prediction accuracy $\neq$ Signal value
+        \item Value comes from information \textit{the market doesn't have}
+        \item Our predictions replicate what VIX already tells us
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Pivot: What do our predictions tell us that VIX doesn't?}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{The Volatility Risk Premium (VRP)}
+    $$\text{VRP} = \text{VIX} - \text{Realized Volatility}$$
+    
+    \vspace{0.2cm}
+    
+    \textbf{The Trade:} Sell variance swap, profit = $(IV^2 - RV^2) \times \text{Notional}$
+    
+    \vspace{0.3cm}
+    
+    \textbf{Historical Statistics (2020-2025):}
+    \begin{itemize}
+        \item VRP positive: \textbf{83.6\%} of 30-day periods
+        \item Mean P\&L: +0.79\% per period
+        \item Std Dev: 9.69\% per period
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    
+    \textbf{The Challenge:}
+    \begin{itemize}
+        \item Premium exists but tail risk is catastrophic
+        \item How to harvest premium while avoiding crashes?
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Strategy 5: VRP Unconditional — Always Sell}
+    \textbf{Implementation:} Sell variance swap every 30-day period
+    
+    \vspace{0.3cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{The Good:}
+            \begin{itemize}
+                \item Return: \textbf{51.8\%} annualized
+                \item Sharpe: \textbf{1.86}
+                \item Bull Market: +244\% ann.
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{The Bad:}
+            \begin{itemize}
+                \item Max DD: \textcolor{hkustred}{\textbf{-96.4\%}}
+                \item Bear Market: -74.7\% ann.
+                \item Near total wipeout in crashes
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.4cm}
+    
+    \begin{center}
+        \textcolor{hkustred}{\textbf{Not investable without filtering}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Strategy 6: VRP VIX-Based — Sell When VIX High}
+    \textbf{Logic:} High VIX = larger premium, mean reversion expected
+    
+    \textbf{Implementation:} Sell only when VIX $>$ 70th percentile
+    
+    \vspace{0.3cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Results:}
+            \begin{itemize}
+                \item Return: 9.9\% ann.
+                \item Sharpe: 1.22
+                \item Max DD: -58.2\%
+                \item Trades: 27\% of periods
+            \end{itemize}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{Problem:}
+            \begin{itemize}
+                \item High VIX $\neq$ Safe to sell
+                \item Can't distinguish:
+                \begin{itemize}
+                    \item Justified fear (crisis)
+                    \item Excessive fear (opportunity)
+                \end{itemize}
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \textcolor{hkustblue}{\textbf{Need: independent forecast to judge if VIX is "too high"}}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Why We Need Expected VRP (Not Just Raw VRP)}
+    \textbf{The Problem with Raw VRP:}
+    $$\text{VRP}_{forecast} = \text{VIX} - \widehat{RV}_{ensemble}$$
+    
+    VRP naturally scales with VIX level:
+    \begin{itemize}
+        \item VIX = 40 $\Rightarrow$ typical VRP $\approx$ 8-10 points
+        \item VIX = 15 $\Rightarrow$ typical VRP $\approx$ 2-3 points
+    \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \textbf{A VRP of 8 means different things:}
+    \begin{itemize}
+        \item At VIX = 40: \textbf{Normal} (expected given high fear)
+        \item At VIX = 20: \textbf{Unusually large} (fear exceeds fundamentals)
+    \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \textbf{Solution:} Model the VIX-VRP relationship, trade the \textit{deviation}
+    $$\text{Expected VRP} = \alpha + \beta \times \text{VIX}$$
+    $$\textbf{Residual} = \text{VRP}_{forecast} - \text{Expected VRP}$$
+\end{frame}
+
+\begin{frame}{Strategy 7: VRP Residual-Based — Our Edge}
+    \textbf{Key Innovation:} Compare VIX to our \textit{independent} RV forecast
+    
+    \vspace{0.2cm}
+    
+    $$\text{VRP}_{forecast} = \text{VIX} - \widehat{RV}_{ensemble}$$
+    $$\text{Expected VRP} = \alpha + \beta \times \text{VIX} \quad \text{(fitted on history)}$$
+    $$\textbf{Residual} = \text{VRP}_{forecast} - \text{Expected VRP}$$
+    
+    \vspace{0.2cm}
+    
+    \textbf{Trading Rule:} Sell when Residual $>$ 70th percentile
+    
+    \vspace{0.2cm}
+    
+    \textbf{Interpretation:}
+    \begin{itemize}
+        \item High residual $\Rightarrow$ VIX is \textit{abnormally} high given our RV forecast
+        \item Market fear exceeds what fundamentals justify
+        \item \textcolor{hkustred}{\textbf{This is mispricing we can exploit}}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Residual-Based Strategy: Worked Examples}
+    \textbf{Example 1: COVID Crash (Don't Sell)}
+    \begin{itemize}
+        \item VIX = 70, Our forecast: RV = 65
+        \item VRP$_{forecast}$ = 5, Expected VRP at VIX=70: $\sim$8
+        \item Residual = 5 - 8 = \textbf{-3} $\Rightarrow$ \textcolor{hkustblue}{Stay out}
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Example 2: Fear Spike (Sell)}
+    \begin{itemize}
+        \item VIX = 35, Our forecast: RV = 18
+        \item VRP$_{forecast}$ = 17, Expected VRP at VIX=35: $\sim$9
+        \item Residual = 17 - 9 = \textbf{+8} $\Rightarrow$ \textcolor{hkustred}{Sell volatility}
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \textbf{The residual isolates \textit{unjustified} fear from \textit{justified} fear}
+    \end{center}
+\end{frame}
+
+\begin{frame}{VRP Strategies: Head-to-Head Comparison}
+    \begin{center}
+        \small
+        \begin{tabular}{l c c c c}
+            \textbf{Strategy} & \textbf{Sharpe} & \textbf{Return} & \textbf{Max DD} & \textbf{Bear Mkt} \\
+            \hline
+            5. Unconditional & 1.86 & 51.8\% & -96.4\% & -74.7\% \\
+            6. VIX-Based & 1.22 & 9.9\% & -58.2\% & -2.7\% \\
+            \textbf{7. Residual-Based} & \textcolor{hkustred}{\textbf{4.97}} & \textbf{25.4\%} & \textbf{-27.7\%} & \textcolor{hkustred}{\textbf{+11.3\%}} \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Residual-Based Advantages:}
+    \begin{itemize}
+        \item Sharpe 4.97 — nearly 3$\times$ Unconditional, 4$\times$ VIX-Based
+        \item \textbf{Positive bear market returns} (+11.3\% when SPY loses -44\%)
+        \item Beta = 0.013 — true diversification from equities
+        \item Max DD -27.7\% — investable risk level
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Robustness Across All Horizons}
+    \begin{center}
+        \begin{tabular}{c c c c c}
+            \textbf{Horizon} & \textbf{Sharpe} & \textbf{Ann. Return} & \textbf{Max DD} & \textbf{Bear Mkt} \\
+            \hline
+            h=2 & 4.39 & 23.9\% & -27.7\% & +3.2\% \\
+            \textbf{h=5} & \textcolor{hkustred}{\textbf{5.94}} & \textbf{31.6\%} & -27.7\% & +14.1\% \\
+            h=10 & 4.84 & 24.8\% & -27.7\% & +11.3\% \\
+            h=30 & 4.97 & 25.4\% & -27.7\% & +11.3\% \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Key Observations:}
+    \begin{itemize}
+        \item Strategy works across \textit{all} forecast horizons
+        \item h=5 (one trading week) performs best: Sharpe 5.94
+        \item Consistent drawdown control across horizons
+        \item \textbf{Not overfitting to a single time scale}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Final Rankings: All Seven Strategies (h=30)}
+    \begin{center}
+        \scriptsize
+        \begin{tabular}{c l c c c c c c}
+            \textbf{Rank} & \textbf{Strategy} & \textbf{Sharpe} & \textbf{Return} & \textbf{Max DD} & \textbf{Alpha} & \textbf{Beta} & \textbf{Bear Mkt} \\
+            \hline
+            1 & \textbf{VRP Residual} & \textcolor{hkustred}{\textbf{4.97}} & 25.4\% & -27.7\% & \textbf{0.23} & \textbf{0.01} & \textcolor{hkustred}{+11.3\%} \\
+            2 & VRP Unconditional & 1.86 & 51.8\% & -96.4\% & 0.43 & 0.18 & -74.7\% \\
+            3 & VRP VIX-Based & 1.22 & 9.9\% & -58.2\% & 0.10 & 0.00 & -2.7\% \\
+            4 & Trend + VIX & 0.91 & 13.6\% & -27.1\% & 0.08 & 0.39 & -38.2\% \\
+            5 & SMA Trend & 0.89 & 10.3\% & -21.2\% & 0.06 & 0.30 & -32.0\% \\
+            6 & Trend + Pred & 0.87 & 13.2\% & -27.1\% & 0.08 & 0.40 & -38.5\% \\
+            7 & Buy \& Hold & 0.60 & 12.5\% & -35.7\% & 0.00 & 1.00 & -44.2\% \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.2cm}
+    
+    \textbf{VRP Residual: highest alpha (0.23), lowest beta (0.01), only positive bear returns}
+\end{frame}
+
+\begin{frame}{Limitations \& Practical Considerations}
+    \textbf{Not Included in Backtest:}
+    \begin{itemize}
+        \item Transaction costs (bid-ask spreads on variance swaps)
+        \item Slippage and market impact
+        \item Margin requirements and financing costs
+        \item Roll costs for VIX futures implementation
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Variance Swap Modeling:}
+    \begin{itemize}
+        \item Theoretical P\&L: $\text{VIX}^2 - \text{RV}_{30}^2$ (no actual market prices)
+        \item Assumes execution at fair value (VIX strike)
+    \end{itemize}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Realistic Expectation:}
+    \begin{itemize}
+        \item Sharpe ratios will degrade with costs (estimate 20-40\% reduction)
+        \item Core insight remains: residual-based filtering outperforms
+    \end{itemize}
+\end{frame}
+
+% --- Thank you slide ---
+\begin{frame}
+\begin{center}
+{ Thank you for listening !}
+\vspace{1cm}
+
+Francesco, Nikhil, Ivan \\[1em]
+\end{center}
+\end{frame}
+
+% ================================================================
+% APPENDIX
+% ================================================================
+
+\appendix
+
+\section{Appendix}
+
+\begin{frame}{Appendix: GARCH Model Selection \& Diagnostics}
+    \textbf{Best Model:} EGARCH(2,1) with Skewed Student-t
+    
+    \vspace{0.2cm}
+    
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Pre-Fit Tests:}
+            \scriptsize
+            \begin{tabular}{l r}
+                ADF p-value & $2.1 \times 10^{-25}$ \\
+                KPSS p-value & 0.100 \\
+                ARCH-LM p-value & $2.2 \times 10^{-292}$ \\
+                Jarque-Bera p-value & 0.000 \\
+            \end{tabular}
+            
+            \vspace{0.2cm}
+            \normalsize
+            \textbf{Post-Fit Tests:}
+            \scriptsize
+            \begin{tabular}{l r}
+                ARCH-LM p-value & 0.839 \\
+                ARCH Pass & \checkmark \\
+                Ljung-Box Pass & \checkmark \\
+            \end{tabular}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \textbf{EGARCH Parameters:}
+            \scriptsize
+            \begin{tabular}{l r}
+                $\mu$ & 0.0223 \\
+                $\omega$ & 0.0036 \\
+                $\alpha_1$ & -0.0496 \\
+                $\alpha_2$ & 0.2079 \\
+                $\gamma_1$ (leverage) & \textbf{-0.1633} \\
+                $\beta_1$ & 0.9724 \\
+                $\eta$ (d.o.f.) & 7.997 \\
+                $\lambda$ (skew) & -0.135 \\
+            \end{tabular}
+            
+            \vspace{0.1cm}
+            \normalsize
+            BIC: 15,401.93
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \scriptsize
+    Training Period: 1993-03-15 to 2015-12-31
+\end{frame}
+
+\begin{frame}{Appendix: Model Performance — RMSE by Horizon}
+    \textbf{Root Mean Square Error (lower is better)}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \small
+        \begin{tabular}{l | c c c | c c c | c c c}
+            & \multicolumn{3}{c|}{\textbf{GARCH}} & \multicolumn{3}{c|}{\textbf{LSTM-RV}} & \multicolumn{3}{c}{\textbf{LSTM-VIX}} \\
+            \textbf{h} & Train & Val & Test & Train & Val & Test & Train & Val & Test \\
+            \hline
+            2 & 0.129 & 0.097 & 0.149 & 0.139 & 0.096 & 0.129 & 0.129 & \textbf{0.090} & \textbf{0.120} \\
+            5 & 0.083 & 0.069 & 0.107 & 0.086 & 0.069 & 0.092 & 0.080 & \textbf{0.061} & \textbf{0.080} \\
+            10 & 0.070 & 0.063 & 0.102 & 0.073 & 0.062 & 0.078 & 0.068 & \textbf{0.056} & \textbf{0.071} \\
+            30 & 0.069 & 0.060 & 0.113 & 0.070 & 0.058 & 0.072 & 0.067 & \textbf{0.050} & \textbf{0.063} \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Key Observations:}
+    \begin{itemize}
+        \item LSTM-VIX achieves lowest validation and test RMSE across all horizons
+        \item GARCH shows higher test RMSE (potential overfitting to training regime)
+        \item Longer horizons have lower absolute RMSE (smoother targets)
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Appendix: Model Performance — MAE by Horizon}
+    \textbf{Mean Absolute Error (lower is better)}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \small
+        \begin{tabular}{l | c c c | c c c | c c c}
+            & \multicolumn{3}{c|}{\textbf{GARCH}} & \multicolumn{3}{c|}{\textbf{LSTM-RV}} & \multicolumn{3}{c}{\textbf{LSTM-VIX}} \\
+            \textbf{h} & Train & Val & Test & Train & Val & Test & Train & Val & Test \\
+            \hline
+            2 & 0.094 & 0.073 & 0.101 & 0.085 & 0.057 & 0.082 & 0.082 & \textbf{0.055} & \textbf{0.079} \\
+            5 & 0.057 & 0.052 & 0.068 & 0.056 & 0.045 & 0.060 & 0.052 & \textbf{0.040} & \textbf{0.055} \\
+            10 & 0.048 & 0.049 & 0.063 & 0.046 & 0.045 & 0.051 & 0.043 & \textbf{0.037} & \textbf{0.047} \\
+            30 & 0.046 & 0.050 & 0.063 & 0.041 & 0.046 & 0.048 & 0.039 & \textbf{0.036} & \textbf{0.042} \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Key Observations:}
+    \begin{itemize}
+        \item MAE confirms LSTM-VIX superiority
+        \item MAE less sensitive to outliers than RMSE
+        \item Consistent ranking across all horizons
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Appendix: Ensemble Weights by Horizon}
+    \textbf{Optimized on Validation Set (2016-2019)}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \begin{tabular}{c c c c}
+            \textbf{Horizon} & \textbf{GARCH} & \textbf{LSTM-RV} & \textbf{LSTM-VIX} \\
+            \hline
+            h=2 & 0.50 & 0.00 & 0.50 \\
+            h=5 & 0.30 & 0.00 & 0.70 \\
+            h=10 & 0.30 & 0.00 & 0.70 \\
+            h=30 & 0.20 & 0.00 & 0.80 \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Pattern:}
+    \begin{itemize}
+        \item LSTM-RV receives \textbf{zero weight} at all horizons
+        \item LSTM-VIX dominates (50-80\% weight)
+        \item GARCH weight decreases with horizon (50\% → 20\%)
+        \item Longer horizons favor forward-looking VIX information
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Appendix: Strategy Metrics — All Horizons (1/2)}
+    \textbf{Equity Strategies (h=30 shown, identical across horizons)}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \scriptsize
+        \begin{tabular}{l c c c c c c}
+            \textbf{Strategy} & \textbf{Total Ret} & \textbf{Ann. Ret} & \textbf{Vol} & \textbf{Sharpe} & \textbf{Max DD} & \textbf{Beta} \\
+            \hline
+            Buy \& Hold & 97.7\% & 12.5\% & 21.0\% & 0.60 & -35.7\% & 1.00 \\
+            SMA Trend & 76.5\% & 10.3\% & 11.6\% & 0.89 & -21.2\% & 0.30 \\
+            Trend + VIX & 109.1\% & 13.6\% & 15.1\% & 0.91 & -27.1\% & 0.39 \\
+            Trend + Pred & 104.8\% & 13.2\% & 15.2\% & 0.87 & -27.1\% & 0.40 \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{VRP Unconditional \& VIX-Based (identical across horizons)}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \scriptsize
+        \begin{tabular}{l c c c c c c}
+            \textbf{Strategy} & \textbf{Total Ret} & \textbf{Ann. Ret} & \textbf{Vol} & \textbf{Sharpe} & \textbf{Max DD} & \textbf{Beta} \\
+            \hline
+            VRP Unconditional & 1013\% & 51.8\% & 27.9\% & 1.86 & -96.4\% & 0.18 \\
+            VRP VIX-Based & 72.4\% & 9.9\% & 8.1\% & 1.22 & -58.2\% & 0.00 \\
+        \end{tabular}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Appendix: Strategy Metrics — All Horizons (2/2)}
+    \textbf{VRP Residual-Based — Performance by Horizon}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \small
+        \begin{tabular}{c c c c c c c}
+            \textbf{h} & \textbf{Total Ret} & \textbf{Ann. Ret} & \textbf{Vol} & \textbf{Sharpe} & \textbf{Max DD} & \textbf{Alpha} \\
+            \hline
+            2 & 245\% & 23.9\% & 5.4\% & 4.39 & -27.7\% & 0.21 \\
+            \textbf{5} & \textbf{388\%} & \textbf{31.6\%} & \textbf{5.3\%} & \textbf{5.94} & -27.7\% & \textbf{0.27} \\
+            10 & 260\% & 24.8\% & 5.1\% & 4.84 & -27.7\% & 0.22 \\
+            30 & 270\% & 25.4\% & 5.1\% & 4.97 & -27.7\% & 0.23 \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Bear vs Bull Market Returns (Residual-Based)}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \small
+        \begin{tabular}{c c c c c}
+            \textbf{h} & \textbf{Bear Ann. Ret} & \textbf{Bull Ann. Ret} & \textbf{Beta} & \textbf{Correlation} \\
+            \hline
+            2 & +3.2\% & +34.7\% & 0.010 & 0.038 \\
+            \textbf{5} & \textbf{+14.1\%} & \textbf{+40.4\%} & 0.015 & 0.059 \\
+            10 & +11.3\% & +31.6\% & 0.013 & 0.052 \\
+            30 & +11.3\% & +32.5\% & 0.013 & 0.054 \\
+        \end{tabular}
+    \end{center}
+\end{frame}
+
+\begin{frame}{Appendix: Test Period Market Conditions}
+    \textbf{Test Set: 2020-01-01 to 2025-11-27}
+    
+    \vspace{0.3cm}
+    
+    \begin{center}
+        \begin{tabular}{l r}
+            \textbf{Statistic} & \textbf{Value} \\
+            \hline
+            Total Trading Days & 1,455 \\
+            Bear Market Days & 456 (31\%) \\
+            Bull Market Days & 999 (69\%) \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{Major Events in Test Period:}
+    \begin{itemize}
+        \item COVID-19 Crash (Feb-Mar 2020): VIX peaked at 82
+        \item Recovery Rally (Apr 2020 - Dec 2021)
+        \item 2022 Bear Market: Inflation, rate hikes
+        \item 2023-2025: Mixed volatility regimes
+    \end{itemize}
+    
+    \vspace{0.2cm}
+    
+    \textbf{SPY Performance:} +97.7\% total, 12.5\% annualized, -35.7\% max DD
+\end{frame}
+
+\begin{frame}{Appendix: Data Splits \& Training Details}
+    \textbf{Temporal Splits:}
+    
+    \vspace{0.2cm}
+    
+    \begin{center}
+        \begin{tabular}{l l r}
+            \textbf{Split} & \textbf{Period} & \textbf{Days} \\
+            \hline
+            Training & 1993-03-15 to 2015-12-31 & 5,744 \\
+            Validation & 2016-01-01 to 2019-12-31 & 1,006 \\
+            Test & 2020-01-01 to 2025-11-27 & 1,455 \\
+        \end{tabular}
+    \end{center}
+    
+    \vspace{0.3cm}
+    
+    \textbf{LSTM Hyperparameters:}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{itemize}
+                \item Sequence length: 60 days
+                \item Hidden size: 64
+                \item Layers: 2
+                \item Bidirectional: Yes
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{itemize}
+                \item Dropout: 0.2
+                \item Learning rate: 0.001
+                \item Batch size: 32
+                \item Early stopping patience: 10
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    \vspace{0.2cm}
+    
+    \textbf{Lookahead Bias Prevention:} Training gap of $h \times 1.5$ calendar days
+\end{frame}
+
+\end{document}
