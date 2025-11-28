@@ -991,7 +991,7 @@ subsubsectionstyle=show/shaded/hide]
         \begin{column}{0.3\textwidth}
             \textbf{Forget Gate:}
             \begin{itemize}
-                \item What to discard
+                \item What to discard (long term)
                 \item $f_t = \sigma(W_f \cdot [h_{t-1}, x_t])$
             \end{itemize}
         \end{column}
@@ -999,7 +999,7 @@ subsubsectionstyle=show/shaded/hide]
         \begin{column}{0.3\textwidth}
             \textbf{Input Gate:}
             \begin{itemize}
-                \item What to store
+                \item What to store (long term)
                 \item $i_t = \sigma(W_i \cdot [h_{t-1}, x_t])$
             \end{itemize}
         \end{column}
@@ -1007,7 +1007,7 @@ subsubsectionstyle=show/shaded/hide]
         \begin{column}{0.3\textwidth}
             \textbf{Output Gate:}
             \begin{itemize}
-                \item What to output
+                \item What to output (short term)
                 \item $o_t = \sigma(W_o \cdot [h_{t-1}, x_t])$
             \end{itemize}
         \end{column}
@@ -1017,6 +1017,12 @@ subsubsectionstyle=show/shaded/hide]
     
         Can maintain long-term memory (e.g., "we're in a crisis regime") over 60+ days without degradation
 \end{frame}
+\begin{frame}{LSTM: Visual Overview}
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.7\textwidth]{pic/lstm.png}
+    \end{figure}
+\end{frame}
 
 \begin{frame}{Our LSTM Architectures}
     \begin{columns}[T]
@@ -1025,7 +1031,6 @@ subsubsectionstyle=show/shaded/hide]
             
                 \begin{itemize}
                     \item Input: Past RV (backward-looking)
-                    \item Bidirectional LSTM
                     \item 2 layers, 128 units each
                     \item Dropout: 0.2
                 \end{itemize}
@@ -1043,7 +1048,6 @@ subsubsectionstyle=show/shaded/hide]
             
                 \begin{itemize}
                     \item Input: VIX (implied volatility)
-                    \item Bidirectional LSTM
                     \item 2 layers, 128 units each
                     \item Dropout: 0.2
                 \end{itemize}
@@ -1062,50 +1066,6 @@ subsubsectionstyle=show/shaded/hide]
     \begin{center}
         \textcolor{hkustblue}{\textbf{Both use 60-day sequence length for context}}
     \end{center}
-\end{frame}
-
-\begin{frame}{Bidirectional LSTMs: Reading History Both Ways}
-        In time series, future context (within training window) can help understand patterns:
-    
-    \vspace{0.2cm}
-    
-    \begin{columns}[T]
-        \begin{column}{0.48\textwidth}
-            \textbf{Forward LSTM:}
-            \begin{itemize}
-                \item Reads $t-60 \to t-1 \to t$
-                \item Captures trends
-                \item Sees how we got here
-            \end{itemize}
-            
-            \vspace{0.2cm}
-            
-            \textbf{Combined Output:}
-            \begin{itemize}
-                \item Concatenate both directions
-                \item Richer representation
-                \item Better pattern recognition
-            \end{itemize}
-        \end{column}
-        
-        \begin{column}{0.48\textwidth}
-            \textbf{Backward LSTM:}
-            \begin{itemize}
-                \item Reads $t \to t-1 \to t-60$
-                \item Captures structure
-                \item Sees overall pattern
-            \end{itemize}
-            
-            \vspace{0.2cm}
-            
-            \textbf{No Lookahead Bias:}
-            \begin{itemize}
-                \item Only uses $t-60$ to $t$
-                \item Target is $t+1$ to $t+h$
-                \item Strict temporal separation
-            \end{itemize}
-        \end{column}
-    \end{columns}
 \end{frame}
 
 \begin{frame}{Training Protocol: Preventing Overfitting}
@@ -1852,6 +1812,9 @@ subsubsectionstyle=show/shaded/hide]
     \end{center}
     
     \vspace{0.2cm}
+    \begin{center}
+        \footnotesize \textit{Out-of-sample test set: 2020--2025 (never-seen data)}
+    \end{center}
     
     \textbf{VRP Residual: highest alpha (0.23), lowest beta (0.01), only positive bear returns}
 \end{frame}
